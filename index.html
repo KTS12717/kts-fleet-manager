@@ -527,11 +527,76 @@ const LiveCamera = ({ onCapture, onClose }) => {
   );
 };
 
-// ============ VEHICLE INSPECTION ============
+// ============ SIGNATURE PAD ============
+const SignaturePad = ({ onSave, label = "Driver Signature" }) => {
+  const canvasRef = useRef(null);
+  const [drawing, setDrawing] = useState(false);
+  const [hasDrawn, setHasDrawn] = useState(false);
+
+  const getPos = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const touch = e.touches ? e.touches[0] : e;
+    return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+  };
+
+  const startDraw = (e) => {
+    e.preventDefault();
+    const ctx = canvasRef.current.getContext("2d");
+    const pos = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+    setDrawing(true);
+    setHasDrawn(true);
+  };
+
+  const draw = (e) => {
+    if (!drawing) return;
+    e.preventDefault();
+    const ctx = canvasRef.current.getContext("2d");
+    const pos = getPos(e);
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#111";
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+  };
+
+  const stopDraw = () => setDrawing(false);
+
+  const clearSig = () => {
+    const ctx = canvasRef.current.getContext("2d");
+    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    setHasDrawn(false);
+  };
+
+  const saveSig = () => {
+    if (!hasDrawn) return alert("Please sign first");
+    onSave(canvasRef.current.toDataURL("image/png"));
+  };
+
+  return (
+    <Card style={{ marginTop: 12 }}>
+      <h4 style={{ color: COLORS.text, fontSize: 14, margin: "0 0 8px", fontWeight: 700 }}>✍️ {label}</h4>
+      <p style={{ color: COLORS.textDim, fontSize: 11, margin: "0 0 8px" }}>Sign with your finger below</p>
+      <div style={{ border: `2px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden", touchAction: "none", background: "#fff" }}>
+        <canvas ref={canvasRef} width={320} height={120}
+          onTouchStart={startDraw} onTouchMove={draw} onTouchEnd={stopDraw}
+          onMouseDown={startDraw} onMouseMove={draw} onMouseUp={stopDraw} onMouseLeave={stopDraw}
+          style={{ width: "100%", height: 120, display: "block", cursor: "crosshair" }} />
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <Btn small outline onClick={clearSig} color={COLORS.textMuted}>Clear</Btn>
+        <Btn small onClick={saveSig} disabled={!hasDrawn}>Save Signature</Btn>
+      </div>
+    </Card>
+  );
+};
 const VehicleInspection = ({ user, onComplete, embedded }) => {
   const [itemData, setItemData] = useState({}); // { itemId: { photo, passfail, dropdown, remark } }
   const [submitted, setSubmitted] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(null); // itemId or null
+  const [signature, setSignature] = useState(null);
 
   const updateItem = (id, field, value) => {
     setItemData(p => ({ ...p, [id]: { ...p[id], [field]: value } }));
@@ -555,9 +620,10 @@ const VehicleInspection = ({ user, onComplete, embedded }) => {
 
   const handleSubmit = () => {
     if (!allComplete) return alert("All inspection items are required");
+    if (!signature) return alert("Signature is required");
     setSubmitted(true);
     setTimeout(() => onComplete({
-      driver: user.name, items: itemData, date: new Date().toISOString(),
+      driver: user.name, items: itemData, signature, date: new Date().toISOString(),
       passed: INSPECTION_ITEMS.every(item => {
         const d = itemData[item.id];
         if (item.type === "passfail") return d?.passfail === "pass";
@@ -694,8 +760,21 @@ const VehicleInspection = ({ user, onComplete, embedded }) => {
           </p>
         </Card>
 
-        <Btn onClick={handleSubmit} disabled={!allComplete}
-          style={{ width: "100%", padding: "14px 0", fontSize: 16 }}>
+        {/* Signature */}
+        {signature ? (
+          <Card style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <h4 style={{ color: COLORS.accent, fontSize: 14, margin: 0 }}>✍️ Signed</h4>
+              <Btn small outline onClick={() => setSignature(null)} color={COLORS.textMuted}>Redo</Btn>
+            </div>
+            <img src={signature} alt="sig" style={{ width: "100%", height: 60, objectFit: "contain", border: `1px solid ${COLORS.border}`, borderRadius: 6 }} />
+          </Card>
+        ) : (
+          <SignaturePad label="Driver Signature — Inspection" onSave={setSignature} />
+        )}
+
+        <Btn onClick={handleSubmit} disabled={!allComplete || !signature}
+          style={{ width: "100%", padding: "14px 0", fontSize: 16, marginTop: 12 }}>
           Submit Inspection
         </Btn>
       </div>
@@ -743,6 +822,8 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
   const [activeView, setActiveView] = useState("log"); // "log" or "inspection"
   const [loginTime] = useState(new Date());
   const [flashInspection, setFlashInspection] = useState(false);
+  const [amSignature, setAmSignature] = useState(null);
+  const [pmSignature, setPmSignature] = useState(null);
 
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
@@ -825,19 +906,21 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
 
   const handleSubmitAM = () => {
     if (!startOdo) return alert("Starting odometer is required");
+    if (!amSignature) return alert("Signature is required for AM route");
     setAmSubmitted(true);
-    if (onSubmit) onSubmit({ period: "am", startOdo, endOdo, clientStatus, absentClients, timestamps, route: driverRoute.name, driver: displayDriver, date: today });
+    if (onSubmit) onSubmit({ period: "am", startOdo, endOdo, clientStatus, absentClients, timestamps, route: driverRoute.name, driver: displayDriver, signature: amSignature, date: today });
   };
 
   const handleSubmitPM = () => {
     if (!endOdo) return alert("Ending odometer is required");
+    if (!pmSignature) return alert("Signature is required for PM route");
     setShowPmSummary(true);
   };
 
   const confirmPmSubmit = () => {
     setPmSubmitted(true);
     setShowPmSummary(false);
-    if (onSubmit) onSubmit({ period: "pm", startOdo, endOdo, clientStatus, absentClients, timestamps, route: driverRoute.name, driver: displayDriver, date: today });
+    if (onSubmit) onSubmit({ period: "pm", startOdo, endOdo, clientStatus, absentClients, timestamps, route: driverRoute.name, driver: displayDriver, signature: pmSignature, date: today });
   };
 
   const isSubmitted = period === "am" ? amSubmitted : pmSubmitted;
@@ -956,8 +1039,25 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
             </div>
           </Card>
 
+          {/* Signature for current period */}
+          {(() => {
+            const sig = period === "am" ? amSignature : pmSignature;
+            const setSig = period === "am" ? setAmSignature : setPmSignature;
+            return sig ? (
+              <Card style={{ marginTop: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <h4 style={{ color: COLORS.accent, fontSize: 14, margin: 0 }}>✍️ Signed</h4>
+                  <Btn small outline onClick={() => setSig(null)} color={COLORS.textMuted}>Redo</Btn>
+                </div>
+                <img src={sig} alt="sig" style={{ width: "100%", height: 60, objectFit: "contain", border: `1px solid ${COLORS.border}`, borderRadius: 6 }} />
+              </Card>
+            ) : (
+              <SignaturePad label={`Driver Signature — ${period.toUpperCase()} Route`} onSave={setSig} />
+            );
+          })()}
+
           <Btn onClick={period === "am" ? handleSubmitAM : handleSubmitPM}
-            disabled={period === "am" ? !startOdo : !endOdo}
+            disabled={period === "am" ? (!startOdo || !amSignature) : (!endOdo || !pmSignature)}
             color={period === "am" ? COLORS.accent : COLORS.blue}
             style={{ width: "100%", marginTop: 12, padding: "14px 0", fontSize: 16 }}>
             Submit {period.toUpperCase()} Route Log
@@ -1092,6 +1192,13 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
 
   // Sequence change confirmation (once per AM, once per PM per route)
   const [seqConfirmed, setSeqConfirmed] = useState({}); // { "routeId_am": true, "routeId_pm": true }
+
+  // Driver reassignment
+  const allDriversAndManagers = users.filter(u => u.role === "driver" || u.role === "manager" || u.role === "admin");
+  const handleReassignDriver = (routeId, newDriverName) => {
+    if (!confirm(`Reassign this route to ${newDriverName}?`)) return;
+    setRoutes(prev => prev.map(r => r.id === routeId ? { ...r, driver: newDriverName } : r));
+  };
 
   const tabs = [
     { id: "routes", label: "Routes", icon: "🗺️" },
@@ -1320,23 +1427,29 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
             <div>
               {!selectedRoute ? (
                 routes.map(route => (
-                  <Card key={route.id} onClick={() => setSelectedRoute(route.id)}
-                    style={{ marginBottom: 8, cursor: "pointer", transition: "border-color 0.2s" }}>
+                  <Card key={route.id} style={{ marginBottom: 8 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div>
+                      <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setSelectedRoute(route.id)}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <h3 style={{ color: COLORS.text, margin: 0, fontSize: 16 }}>{route.name}</h3>
-                          <Badge>{route.driver}</Badge>
                         </div>
                         <p style={{ color: COLORS.textDim, fontSize: 12, margin: "4px 0 0" }}>
                           {route.clients.filter(c => c.active).length} active clients · Vehicle: {route.vehicleId}
                         </p>
                       </div>
-                      <div style={{ textAlign: "right" }}>
-                        <p style={{ color: COLORS.accent, fontSize: 14, fontWeight: 700, margin: 0 }}>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                        <select value={route.driver} onChange={(e) => handleReassignDriver(route.id, e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ padding: "4px 24px 4px 8px", fontSize: 12, fontWeight: 600, borderRadius: 6,
+                            border: `1px solid ${COLORS.accent}`, background: COLORS.accent + "15", color: COLORS.accent,
+                            cursor: "pointer", maxWidth: 140 }}>
+                          {allDriversAndManagers.map(u => (
+                            <option key={u.id} value={u.name}>{u.name}</option>
+                          ))}
+                        </select>
+                        <p style={{ color: COLORS.accent, fontSize: 13, fontWeight: 700, margin: 0 }}>
                           {(route.amMiles + route.pmMiles).toFixed(1)} mi
                         </p>
-                        <p style={{ color: COLORS.textMuted, fontSize: 11, margin: 0 }}>AM: {route.amMiles} / PM: {route.pmMiles}</p>
                       </div>
                     </div>
                   </Card>
@@ -1404,7 +1517,17 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
                   return (
                     <div>
                       <Btn small outline onClick={() => setSelectedRoute(null)} style={{ marginBottom: 12 }}>← Back to Routes</Btn>
-                      <h3 style={{ color: COLORS.text, margin: "0 0 4px" }}>{route.name} — {route.driver}</h3>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                        <h3 style={{ color: COLORS.text, margin: 0 }}>{route.name}</h3>
+                        <span style={{ color: COLORS.textMuted }}>—</span>
+                        <select value={route.driver} onChange={(e) => handleReassignDriver(route.id, e.target.value)}
+                          style={{ padding: "4px 24px 4px 8px", fontSize: 13, fontWeight: 600, borderRadius: 6,
+                            border: `1px solid ${COLORS.accent}`, background: COLORS.accent + "15", color: COLORS.accent, cursor: "pointer" }}>
+                          {allDriversAndManagers.map(u => (
+                            <option key={u.id} value={u.name}>{u.name}</option>
+                          ))}
+                        </select>
+                      </div>
                       <p style={{ color: COLORS.textDim, fontSize: 12, margin: "0 0 8px" }}>Vehicle: {route.vehicleId} · Drag stops with ▲▼ arrows to reorder</p>
 
                       {renderStops(route.amStops, "am", COLORS.accent)}
