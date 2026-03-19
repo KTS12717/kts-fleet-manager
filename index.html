@@ -34,10 +34,26 @@
       document.getElementById('loading').innerHTML = '<p style="color:red;padding:20px;text-align:center">Failed to load ' + lib + '. Check your internet connection and refresh.</p>';
     }
   </script>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" onerror="loadErr('React')"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" onerror="loadErr('ReactDOM')"></script>
-  <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js" onerror="loadErr('Babel')"></script>
-  <script type="text/babel" data-type="module">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" onerror="loadErr('React')"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" onerror="loadErr('ReactDOM')"></script>
+  <script>
+    // Load Babel with primary + fallback CDN
+    (function() {
+      function tryLoad(urls, idx) {
+        if (idx >= urls.length) { loadErr('Babel'); return; }
+        var s = document.createElement('script');
+        s.src = urls[idx];
+        s.onerror = function() { tryLoad(urls, idx + 1); };
+        document.head.appendChild(s);
+      }
+      tryLoad([
+        'https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js',
+        'https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.5/babel.min.js'
+      ], 0);
+    })();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="console.warn('SheetJS not loaded')"></script>
+  <script id="app-source" type="text/plain">
     const { useState, useEffect, useCallback, useRef } = React;
 
 
@@ -84,12 +100,12 @@ const ROUTES_DEFAULT = [
     ],
     amMiles: 134.5, pmMiles: 116,
     clients: [
-      { name: "Anthony Stayner", address: "10326 Machico Way, Elk Grove CA", uci: "8215001", active: true, status: "active" },
-      { name: "George Orin", address: "10326 Machico Way, Elk Grove CA", uci: "8215002", active: true, status: "active" },
-      { name: "Alex Gomez", address: "618 Union St., Isleton CA", uci: "8215348", active: true, status: "active" },
-      { name: "Pablo Tinoco", address: "746 Elk Hills Dr., Galt CA", uci: "8215003", active: true, status: "active" },
-      { name: "Shon Teel", address: "9812 Harvey Road, Galt CA 95632", uci: "8215004", active: true, status: "active" },
-      { name: "Glen Wells", address: "9812 Harvey Road, Galt CA 95632", uci: "8215005", active: true, status: "active" },
+      { name: "Anthony Stayner", address: "10326 Machico Way, Elk Grove CA", uci: "8215001", active: true, status: "active", dayProgram: "PCS", dropoffAddress: "4155 N. El Dorado St., Stockton CA" },
+      { name: "George Orin", address: "10326 Machico Way, Elk Grove CA", uci: "8215002", active: true, status: "active", dayProgram: "PCS", dropoffAddress: "4155 N. El Dorado St., Stockton CA" },
+      { name: "Alex Gomez", address: "618 Union St., Isleton CA", uci: "8215348", active: true, status: "active", dayProgram: "Galt Act", dropoffAddress: "1067 C Street Ste 116, Galt CA" },
+      { name: "Pablo Tinoco", address: "746 Elk Hills Dr., Galt CA", uci: "8215003", active: true, status: "active", dayProgram: "Galt Act", dropoffAddress: "1067 C Street Ste 116, Galt CA" },
+      { name: "Shon Teel", address: "9812 Harvey Road, Galt CA 95632", uci: "8215004", active: true, status: "active", dayProgram: "CVTC", dropoffAddress: "7209 Tam O'Shanter Dr., Stockton CA" },
+      { name: "Glen Wells", address: "9812 Harvey Road, Galt CA 95632", uci: "8215005", active: true, status: "active", dayProgram: "CVTC", dropoffAddress: "7209 Tam O'Shanter Dr., Stockton CA" },
     ]
   },
   {
@@ -1182,6 +1198,16 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
   const [showAddStop, setShowAddStop] = useState(false);
   const [newStop, setNewStop] = useState({ type: "pickup", label: "", address: "", time: "", clients: "", dropoff: false });
 
+  // Edit user state
+  const [showEditUser, setShowEditUser] = useState(false);
+  const [editUser, setEditUser] = useState(null);
+
+  // Edit client/participant state
+  const [editClientData, setEditClientData] = useState(null); // { routeId, client }
+
+  // Client filter state
+  const [clientFilterRoute, setClientFilterRoute] = useState('all');
+
   // Client status modal state
   const [clientModal, setClientModal] = useState(null); // { routeId, clientName }
   const [returnDate, setReturnDate] = useState("");
@@ -1193,6 +1219,15 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
   // Sequence change confirmation (once per AM, once per PM per route)
   const [seqConfirmed, setSeqConfirmed] = useState({}); // { "routeId_am": true, "routeId_pm": true }
 
+  // Pending (unsaved) stop order changes — { "routeId_am": [...stops], "routeId_pm": [...stops] }
+  const [pendingStops, setPendingStops] = useState({});
+  // Confirm-save modal state
+  const [saveConfirm, setSaveConfirm] = useState(null); // { routeId, period }
+
+  // Master participants modal state
+  const [archiveConfirm, setArchiveConfirm] = useState(null); // { participant, affectedRoutes }
+  const [archiveDone, setArchiveDone] = useState(null);       // { name, affectedRoutes }
+
   // Driver reassignment
   const allDriversAndManagers = users.filter(u => u.role === "driver" || u.role === "manager" || u.role === "admin");
   const handleReassignDriver = (routeId, newDriverName) => {
@@ -1203,11 +1238,13 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
   const tabs = [
     { id: "routes", label: "Routes", icon: "🗺️" },
     { id: "clients", label: "Clients", icon: "👥" },
+    { id: "participants", label: "Participants", icon: "📋" },
     { id: "schedule", label: "Schedule", icon: "📅" },
     { id: "mileage", label: "Mileage", icon: "📊" },
     { id: "logs", label: "Logs", icon: "📋" },
     { id: "inspect", label: "Inspections", icon: "🔍" },
     { id: "users", label: "Users", icon: "🔑" },
+    { id: "reports", label: "Reports", icon: "📥" },
   ];
 
   // When toggling client OFF → show modal; when toggling ON → just activate
@@ -1255,28 +1292,35 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
     setClientModal(null);
   };
 
-  // Swap stop positions by sequence number
+  // Swap stop positions in LOCAL draft (not saved yet)
   const handleSequenceChange = (routeId, period, fromIndex, newSeqNum) => {
     const toIndex = newSeqNum - 1;
-    const key = period === "am" ? "amStops" : "pmStops";
+    const key = `${routeId}_${period}`;
     const route = routes.find(r => r.id === routeId);
     if (!route) return;
-    const stops = route[key];
-    if (toIndex < 0 || toIndex >= stops.length || toIndex === fromIndex) return;
+    const stopsKey = period === "am" ? "amStops" : "pmStops";
+    // Use pending draft if exists, otherwise use live stops
+    const currentStops = pendingStops[key] ? [...pendingStops[key]] : [...route[stopsKey]];
+    if (toIndex < 0 || toIndex >= currentStops.length || toIndex === fromIndex) return;
+    const [moved] = currentStops.splice(fromIndex, 1);
+    currentStops.splice(toIndex, 0, moved);
+    setPendingStops(prev => ({ ...prev, [key]: currentStops }));
+  };
 
-    const confirmKey = `${routeId}_${period}`;
-    if (!seqConfirmed[confirmKey]) {
-      if (!confirm("Confirm you want to change the sequence?")) return;
-      setSeqConfirmed(prev => ({ ...prev, [confirmKey]: true }));
-    }
+  // Save pending sequence changes after confirmation
+  const handleSavePendingStops = (routeId, period) => {
+    const key = `${routeId}_${period}`;
+    if (!pendingStops[key]) return;
+    const stopsKey = period === "am" ? "amStops" : "pmStops";
+    setRoutes(prev => prev.map(r => r.id !== routeId ? r : { ...r, [stopsKey]: pendingStops[key] }));
+    setPendingStops(prev => { const n = {...prev}; delete n[key]; return n; });
+    setSaveConfirm(null);
+  };
 
-    setRoutes(prev => prev.map(r => {
-      if (r.id !== routeId) return r;
-      const arr = [...r[key]];
-      const [moved] = arr.splice(fromIndex, 1);
-      arr.splice(toIndex, 0, moved);
-      return { ...r, [key]: arr };
-    }));
+  const handleDiscardPendingStops = (routeId, period) => {
+    const key = `${routeId}_${period}`;
+    setPendingStops(prev => { const n = {...prev}; delete n[key]; return n; });
+    setSaveConfirm(null);
   };
 
   // Toggle stop active/inactive — show modal when deactivating
@@ -1457,62 +1501,105 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
               ) : (
                 (() => {
                   const route = routes.find(r => r.id === selectedRoute);
-                  const renderStops = (stops, period, color) => (
+                  const renderStops = (stops, period, color) => {
+                    const pendingKey = `${route.id}_${period}`;
+                    const displayStops = pendingStops[pendingKey] || stops;
+                    const hasPending = !!pendingStops[pendingKey];
+                    return (
                     <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "12px 0 8px" }}>
-                        <h4 style={{ color, fontSize: 14, margin: 0 }}>
-                          {period === "am" ? "☀️ AM Route" : "🌙 PM Route"}
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", margin:"14px 0 10px" }}>
+                        <h4 style={{ color, fontSize:14, margin:0, fontWeight:800 }}>
+                          {period==="am" ? "☀️ AM Route" : "🌙 PM Route"}
+                          {hasPending && <span style={{ color:COLORS.yellow, fontSize:11, marginLeft:8, fontWeight:600 }}>● Unsaved changes</span>}
                         </h4>
-                        <Btn small color={color} onClick={() => { setEditPeriod(period); setShowAddStop(true); }}>+ Add Stop</Btn>
-                      </div>
-                      {stops.map((s, i) => (
-                        <div key={s.id} style={{
-                          padding: "10px 12px", borderLeft: `3px solid ${s.inactive ? COLORS.red : s.type === "base" ? color : COLORS.border}`,
-                          marginBottom: 4, display: "flex", alignItems: "center", gap: 10,
-                          background: s.inactive ? COLORS.bg : COLORS.card, borderRadius: "0 8px 8px 0",
-                          opacity: s.inactive ? 0.5 : 1, boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                        }}>
-                          {/* Sequence Number */}
-                          <div style={{ minWidth: 42, flexShrink: 0 }}>
-                            <select
-                              value={i + 1}
-                              onChange={(e) => handleSequenceChange(route.id, period, i, parseInt(e.target.value))}
-                              style={{
-                                width: 42, height: 36, textAlign: "center", fontSize: 14, fontWeight: 700,
-                                background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: 6,
-                                color: COLORS.text, cursor: "pointer", appearance: "none", WebkitAppearance: "none",
-                                paddingLeft: 12,
-                              }}>
-                              {stops.map((_, idx) => (
-                                <option key={idx} value={idx + 1}>{idx + 1}</option>
-                              ))}
-                            </select>
-                          </div>
-                          {/* Stop Info */}
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                              {s.label && <Badge color={COLORS.yellow}>{s.label}</Badge>}
-                              {s.dropoff && <Badge color={COLORS.red}>Drop-off</Badge>}
-                              {!s.dropoff && s.type !== "base" && <Badge color={COLORS.blue}>Pickup</Badge>}
-                              {s.type === "base" && <Badge color={color}>Base</Badge>}
-                              {s.time && <span style={{ color: COLORS.yellow, fontSize: 12, fontWeight: 700 }}>{s.time}</span>}
-                              {s.stopReturnDate && <span style={{ color: COLORS.yellow, fontSize: 11 }}>📅 {s.stopReturnDate}</span>}
-                            </div>
-                            <p style={{ color: COLORS.text, fontSize: 12, margin: "3px 0 0", lineHeight: 1.3, wordBreak: "break-word" }}>{s.address}</p>
-                            {s.clients?.length > 0 && <p style={{ color: COLORS.textDim, fontSize: 11, margin: "2px 0 0" }}>
-                              {s.clients.join(", ")}
-                            </p>}
-                          </div>
-                          {/* Active/Inactive Toggle */}
-                          {s.type !== "base" && (
-                            <div style={{ flexShrink: 0 }}>
-                              <Toggle on={!s.inactive} onChange={() => handleStopToggle(route.id, period, s)} />
-                            </div>
-                          )}
+                        <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                          <span style={{ color:COLORS.textMuted, fontSize:11 }}>{displayStops.length} stops</span>
+                          <Btn small color={color} onClick={()=>{ setEditPeriod(period); setShowAddStop(true); }}>+ Add Stop</Btn>
                         </div>
-                      ))}
+                      </div>
+                      {displayStops.map((s, i) => {
+                        const clientsWithPrograms = (s.clients||[]).map(cName => {
+                          const cl = route.clients.find(c=>c.name===cName);
+                          return { name:cName, dayProgram:cl?.dayProgram||'', dropoffAddress:cl?.dropoffAddress||'' };
+                        });
+                        return (
+                          <div key={s.id} style={{
+                            marginBottom:6, opacity:s.inactive?0.45:1,
+                            background:s.inactive?'#fff8f8':s.type==="base"?'#f0fdf4':COLORS.card,
+                            borderRadius:10,
+                            border:`1px solid ${s.inactive?COLORS.red+'44':s.type==="base"?color+'44':COLORS.border}`,
+                            overflow:'hidden',
+                          }}>
+                            <div style={{ display:"flex", alignItems:"stretch" }}>
+                              {/* Sequence Number */}
+                              <div style={{ minWidth:48, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+                                background:s.type==="base"?color:s.dropoff?'#fef2f2':'#eff6ff', padding:"10px 4px", gap:4 }}>
+                                <select value={i+1}
+                                  onChange={e=>handleSequenceChange(route.id, period, i, parseInt(e.target.value))}
+                                  style={{ width:36, height:36, textAlign:"center", textAlignLast:"center",
+                                    fontSize:15, fontWeight:800,
+                                    background:s.type==="base"?'rgba(255,255,255,0.3)':'white',
+                                    border:`2px solid ${s.type==="base"?'rgba(255,255,255,0.5)':color}`,
+                                    borderRadius:8, color:s.type==="base"?'#fff':color,
+                                    cursor:"pointer", appearance:"none", WebkitAppearance:"none" }}>
+                                  {displayStops.map((_,idx)=><option key={idx} value={idx+1}>{idx+1}</option>)}
+                                </select>
+                                <span style={{ fontSize:9, color:s.type==="base"?'rgba(255,255,255,0.8)':COLORS.textMuted, textTransform:"uppercase" }}>order</span>
+                              </div>
+                              {/* Stop Content */}
+                              <div style={{ flex:1, padding:"10px 10px 10px 12px", minWidth:0 }}>
+                                <div style={{ display:"flex", alignItems:"center", gap:5, flexWrap:"wrap", marginBottom:4 }}>
+                                  {s.type==="base" && <Badge color={color}>🏠 Base</Badge>}
+                                  {s.dropoff && <Badge color={COLORS.red}>⬇ Drop-off</Badge>}
+                                  {!s.dropoff && s.type!=="base" && <Badge color={COLORS.blue}>⬆ Pickup</Badge>}
+                                  {s.label && <Badge color={COLORS.yellow}>{s.label}</Badge>}
+                                  {s.time && <span style={{ color:COLORS.yellow, fontSize:12, fontWeight:700 }}>🕐 {s.time}</span>}
+                                  {s.inactive && <Badge color={COLORS.red}>Inactive</Badge>}
+                                  {s.stopReturnDate && <span style={{ color:COLORS.yellow, fontSize:11 }}>📅 Returns {s.stopReturnDate}</span>}
+                                </div>
+                                <p style={{ color:COLORS.text, fontSize:13, margin:"2px 0", fontWeight:600, lineHeight:1.3 }}>{s.address}</p>
+                                {s.clients?.length>0 && (
+                                  <div style={{ marginTop:6 }}>
+                                    {clientsWithPrograms.map(cp=>(
+                                      <div key={cp.name} style={{ marginBottom:4, padding:"5px 8px",
+                                        background:s.dropoff?'#fef2f2':'#eff6ff', borderRadius:6,
+                                        borderLeft:`3px solid ${s.dropoff?COLORS.red:COLORS.blue}` }}>
+                                        <p style={{ color:COLORS.text, fontSize:12, fontWeight:600, margin:0 }}>{s.dropoff?'⬇':'⬆'} {cp.name}</p>
+                                        {!s.dropoff && cp.dayProgram && <p style={{ color:COLORS.accent, fontSize:11, margin:"2px 0 0" }}>📍 Drop-off: <strong>{cp.dayProgram}</strong> — {cp.dropoffAddress}</p>}
+                                        {s.dropoff && (()=>{ const cl=route.clients.find(c=>c.name===cp.name); return cl?.address?<p style={{ color:COLORS.textMuted, fontSize:11, margin:"2px 0 0" }}>🏠 Home: {cl.address}</p>:null; })()}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              {/* Toggle */}
+                              {s.type!=="base" && (
+                                <div style={{ display:"flex", alignItems:"center", padding:"0 10px", flexShrink:0 }}>
+                                  <Toggle on={!s.inactive} onChange={()=>handleStopToggle(route.id, period, s)} />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {/* Save/Discard bar */}
+                      <div style={{ marginTop:10, padding:"10px 0", borderTop:`1px dashed ${COLORS.border}` }}>
+                        {hasPending ? (
+                          <div style={{ display:"flex", gap:8 }}>
+                            <Btn onClick={()=>setSaveConfirm({routeId:route.id, period})}
+                              style={{ flex:1, fontWeight:700 }}>💾 Save {period.toUpperCase()} Order</Btn>
+                            <Btn outline onClick={()=>handleDiscardPendingStops(route.id, period)} style={{ flex:1 }}>✕ Discard</Btn>
+                          </div>
+                        ) : (
+                          <p style={{ color:COLORS.textMuted, fontSize:11, textAlign:"center", margin:0 }}>
+                            ✓ {period.toUpperCase()} order saved — change a number above to reorder
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  );
+                    );
+                  };
+
 
                   return (
                     <div>
@@ -1528,10 +1615,33 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
                           ))}
                         </select>
                       </div>
-                      <p style={{ color: COLORS.textDim, fontSize: 12, margin: "0 0 8px" }}>Vehicle: {route.vehicleId} · Drag stops with ▲▼ arrows to reorder</p>
+                      <p style={{ color: COLORS.textDim, fontSize: 12, margin: "0 0 8px" }}>Vehicle: {route.vehicleId} · Change a sequence number, then hit Save to apply.</p>
 
                       {renderStops(route.amStops, "am", COLORS.accent)}
                       {renderStops(route.pmStops, "pm", COLORS.blue)}
+
+                      {/* Save Order Confirmation Modal */}
+                      {saveConfirm && saveConfirm.routeId === route.id && (
+                        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.55)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+                          <Card style={{ width:"100%", maxWidth:380 }}>
+                            <h3 style={{ color: COLORS.text, margin:"0 0 8px" }}>💾 Confirm Sequence Change</h3>
+                            <p style={{ color: COLORS.textDim, fontSize:13, margin:"0 0 6px" }}>
+                              You are updating the <strong>{saveConfirm.period.toUpperCase()} route</strong> stop order for:
+                            </p>
+                            <p style={{ color: COLORS.accent, fontWeight:700, fontSize:14, margin:"0 0 16px" }}>{route.name}</p>
+                            <p style={{ color: COLORS.textMuted, fontSize:12, margin:"0 0 20px" }}>
+                              This will permanently change the pickup/drop-off sequence. Drivers will see the new order immediately.
+                            </p>
+                            <div style={{ display:"flex", gap:8 }}>
+                              <Btn onClick={() => handleSavePendingStops(route.id, saveConfirm.period)}
+                                style={{ flex:1, background: COLORS.accent, color:'#fff', fontWeight:700 }}>
+                                ✓ Proceed
+                              </Btn>
+                              <Btn outline onClick={() => setSaveConfirm(null)} style={{ flex:1 }}>Cancel</Btn>
+                            </div>
+                          </Card>
+                        </div>
+                      )}
 
                       {/* Add Stop Modal */}
                       {showAddStop && (
@@ -1597,78 +1707,111 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
             </div>
           )}
 
-          {/* CLIENTS TAB with toggle */}
+          {/* CLIENTS / PARTICIPANTS TAB */}
           {tab === "clients" && (
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <p style={{ color: COLORS.textDim, fontSize: 13, margin: 0 }}>
-                  Toggle clients on/off routes. Red = removed from route.
-                </p>
-                <Btn small onClick={() => setShowAddClient(true)}>+ Add Client</Btn>
+              {/* Route filter */}
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, flexWrap:"wrap", gap:8 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                  <p style={{ color: COLORS.textDim, fontSize:12, margin:0, fontWeight:600 }}>FILTER:</p>
+                  {[{id:'all',name:'All Routes'}, ...routes].map(r => (
+                    <button key={r.id||'all'} onClick={() => setClientFilterRoute(r.id||'all')}
+                      style={{ padding:"4px 10px", borderRadius:20, border:`1px solid ${clientFilterRoute===(r.id||'all') ? COLORS.accent : COLORS.border}`,
+                        background: clientFilterRoute===(r.id||'all') ? COLORS.accent : 'transparent',
+                        color: clientFilterRoute===(r.id||'all') ? '#fff' : COLORS.textMuted,
+                        fontSize:11, cursor:"pointer", fontWeight:600 }}>
+                      {r.name}
+                    </button>
+                  ))}
+                </div>
+                <Btn small onClick={() => setShowAddClient(true)}>+ Add Participant</Btn>
               </div>
 
-              {/* Show archived clients count */}
-              {(() => {
-                const archived = routes.flatMap(r => r.clients.filter(c => c.status === "archived"));
-                if (archived.length > 0) return (
-                  <Card style={{ marginBottom: 12, borderColor: COLORS.textMuted + "44", padding: 12 }}>
-                    <p style={{ color: COLORS.textMuted, fontSize: 12, margin: 0 }}>📦 {archived.length} archived client{archived.length > 1 ? "s" : ""} hidden</p>
+              {/* Stats bar */}
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:16 }}>
+                {[
+                  { label:"Total", value: routes.reduce((s,r)=>s+r.clients.length,0), color: COLORS.accent },
+                  { label:"Active", value: routes.reduce((s,r)=>s+r.clients.filter(c=>c.active&&c.status!=='archived').length,0), color:"#166534" },
+                  { label:"Inactive/Archived", value: routes.reduce((s,r)=>s+r.clients.filter(c=>!c.active||c.status==='archived').length,0), color: COLORS.red },
+                ].map(s => (
+                  <Card key={s.label} style={{ textAlign:"center", padding:10 }}>
+                    <p style={{ color:s.color, fontSize:18, fontWeight:800, margin:0 }}>{s.value}</p>
+                    <p style={{ color: COLORS.textMuted, fontSize:10, margin:"2px 0 0" }}>{s.label}</p>
                   </Card>
-                );
-                return null;
-              })()}
+                ))}
+              </div>
 
-              {routes.filter(r => r.clients.length > 0).map(route => (
-                <Card key={route.id} style={{ marginBottom: 12 }}>
-                  <h3 style={{ color: COLORS.accent, margin: "0 0 8px", fontSize: 15 }}>{route.name} — {route.driver}</h3>
+              {routes.filter(r => clientFilterRoute === 'all' || r.id === clientFilterRoute).map(route => (
+                <Card key={route.id} style={{ marginBottom:14 }}>
+                  {/* Route header with driver */}
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10, paddingBottom:8, borderBottom:`2px solid ${COLORS.accent}33` }}>
+                    <div>
+                      <h3 style={{ color: COLORS.accent, margin:0, fontSize:15, fontWeight:700 }}>{route.name}</h3>
+                      <p style={{ color: COLORS.textMuted, fontSize:11, margin:"2px 0 0" }}>Driver: {route.driver} · {route.clients.filter(c=>c.active&&c.status!=='archived').length} active participants</p>
+                    </div>
+                    <Btn small onClick={() => { setNewClient(p=>({...p, routeId:route.id})); setShowAddClient(true); }}>+ Add</Btn>
+                  </div>
+
+                  {/* Active participants */}
+                  {route.clients.filter(c => c.status !== "archived").length === 0 && (
+                    <p style={{ color: COLORS.textMuted, fontSize:12, textAlign:"center", padding:"12px 0" }}>No participants on this route</p>
+                  )}
                   {route.clients.filter(c => c.status !== "archived").map(client => (
                     <div key={client.name} style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                      padding: "10px 0", borderBottom: `1px solid ${COLORS.border}`,
-                      opacity: client.active ? 1 : 0.6,
+                      display:"flex", alignItems:"center", justifyContent:"space-between",
+                      padding:"10px 0", borderBottom:`1px solid ${COLORS.border}`,
+                      opacity: client.active ? 1 : 0.55,
+                      background: !client.active ? '#fff8f0' : 'transparent',
+                      borderRadius: !client.active ? 6 : 0,
                     }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <p style={{ color: COLORS.text, margin: 0, fontSize: 14 }}>{client.name}</p>
+                      <div style={{ flex:1, minWidth:0, paddingRight:8 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                          <p style={{ color: COLORS.text, margin:0, fontSize:14, fontWeight:600 }}>{client.name}</p>
                           {client.status === "inactive" && <Badge color={COLORS.yellow}>Inactive</Badge>}
+                          {!client.active && client.returnDate && <Badge color={COLORS.yellow}>Returns {client.returnDate}</Badge>}
                         </div>
-                        <p style={{ color: COLORS.textMuted, margin: 0, fontSize: 11 }}>{client.address}</p>
-                        {client.uci && <p style={{ color: COLORS.textMuted, margin: 0, fontSize: 10 }}>UCI: {client.uci}</p>}
-                        {client.returnDate && <p style={{ color: COLORS.yellow, margin: "2px 0 0", fontSize: 11 }}>📅 Returns: {client.returnDate}</p>}
+                        <p style={{ color: COLORS.textMuted, margin:"2px 0 0", fontSize:11 }}>🏠 {client.address}</p>
+                        {client.dayProgram ? (
+                          <p style={{ color: COLORS.accent, margin:"2px 0 0", fontSize:11, fontWeight:600 }}>
+                            📍 {client.dayProgram}{client.dropoffAddress ? ` — ${client.dropoffAddress}` : ''}
+                          </p>
+                        ) : (
+                          <p style={{ color: COLORS.textMuted, margin:"2px 0 0", fontSize:10, fontStyle:"italic" }}>No day program — tap ✏️ to add</p>
+                        )}
+                        {client.uci && <p style={{ color: COLORS.textDim, margin:0, fontSize:10 }}>UCI: {client.uci}</p>}
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                        <Toggle on={client.active} onChange={() => handleClientToggle(route.id, client.name)} />
-                        <button onClick={() => handleRemoveClient(route.id, client.name)}
-                          style={{ background: "none", border: "none", color: COLORS.red, cursor: "pointer", fontSize: 14, padding: 4 }}>✕</button>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                        <button onClick={() => setEditClientData({ routeId: route.id, client: {...client} })}
+                          title="Edit participant"
+                          style={{ background:"none", border:`1px solid ${COLORS.border}`, color: COLORS.textMuted, cursor:"pointer", fontSize:12, padding:"4px 8px", borderRadius:6 }}>✏️</button>
+                        <Toggle on={client.active && client.status !== 'archived'} onChange={() => handleClientToggle(route.id, client.name)} />
+                        <button
+                          onClick={() => { if (window.confirm(`Permanently remove ${client.name} from ${route.name}?`)) handleRemoveClient(route.id, client.name); }}
+                          title="Remove participant"
+                          style={{ background:"none", border:"none", color: COLORS.red, cursor:"pointer", fontSize:16, padding:"4px 6px", borderRadius:6,
+                            lineHeight:1, display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
                       </div>
                     </div>
                   ))}
 
-                  {/* Show archived clients for this route */}
+                  {/* Archived section */}
                   {route.clients.filter(c => c.status === "archived").length > 0 && (
-                    <details style={{ marginTop: 8 }}>
-                      <summary style={{ color: COLORS.textMuted, fontSize: 12, cursor: "pointer", padding: "4px 0" }}>
-                        📦 {route.clients.filter(c => c.status === "archived").length} archived
+                    <details style={{ marginTop:8 }}>
+                      <summary style={{ color: COLORS.textMuted, fontSize:12, cursor:"pointer", padding:"6px 0", userSelect:"none" }}>
+                        📦 {route.clients.filter(c=>c.status==="archived").length} archived participant{route.clients.filter(c=>c.status==="archived").length>1?"s":""}
                       </summary>
                       {route.clients.filter(c => c.status === "archived").map(client => (
-                        <div key={client.name} style={{
-                          display: "flex", alignItems: "center", justifyContent: "space-between",
-                          padding: "8px 0", borderBottom: `1px solid ${COLORS.border}`, opacity: 0.4,
-                        }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                              <p style={{ color: COLORS.text, margin: 0, fontSize: 14 }}>{client.name}</p>
-                              <Badge color={COLORS.red}>Archived</Badge>
-                            </div>
-                            <p style={{ color: COLORS.textMuted, margin: 0, fontSize: 11 }}>{client.address}</p>
+                        <div key={client.name} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 0", borderBottom:`1px solid ${COLORS.border}`, opacity:0.45 }}>
+                          <div>
+                            <p style={{ color: COLORS.text, margin:0, fontSize:13 }}>{client.name}</p>
+                            <Badge color={COLORS.red}>Archived</Badge>
                           </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                            <Btn small color={COLORS.accent} onClick={() => {
-                              setRoutes(prev => prev.map(r => {
-                                if (r.id !== route.id) return r;
-                                return { ...r, clients: r.clients.map(c => c.name === client.name ? { ...c, active: true, status: "active", returnDate: "" } : c) };
-                              }));
-                            }}>Reactivate</Btn>
+                          <div style={{ display:"flex", gap:8 }}>
+                            <Btn small color={COLORS.accent} onClick={() => setRoutes(prev => prev.map(r => r.id!==route.id?r:{...r,clients:r.clients.map(c=>c.name===client.name?{...c,active:true,status:"active",returnDate:""}:c)}))}>
+                              Reactivate
+                            </Btn>
+                            <button onClick={() => { if(window.confirm(`Delete ${client.name}?`)) handleRemoveClient(route.id,client.name); }}
+                              style={{ background:"none", border:"none", color:COLORS.red, cursor:"pointer", fontSize:14 }}>✕</button>
                           </div>
                         </div>
                       ))}
@@ -1679,66 +1822,295 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
 
               {/* Client Status Modal */}
               {clientModal && (
-                <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-                  <Card style={{ width: "100%", maxWidth: 420 }}>
-                    <h3 style={{ color: COLORS.text, margin: "0 0 6px" }}>Remove {clientModal.clientName} from Route</h3>
-                    <p style={{ color: COLORS.textDim, fontSize: 13, margin: "0 0 20px" }}>Is there a return date?</p>
-
-                    {/* Option 1: Return date */}
-                    <Card style={{ marginBottom: 10, border: `1px solid ${COLORS.yellow}44`, padding: 14 }}>
-                      <p style={{ color: COLORS.yellow, fontSize: 13, fontWeight: 700, margin: "0 0 8px" }}>📅 Yes — Set a return date</p>
+                <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+                  <Card style={{ width:"100%", maxWidth:420 }}>
+                    <h3 style={{ color: COLORS.text, margin:"0 0 4px" }}>Remove from Route</h3>
+                    <p style={{ color: COLORS.accent, fontWeight:700, margin:"0 0 4px" }}>{clientModal.clientName}</p>
+                    <p style={{ color: COLORS.textDim, fontSize:13, margin:"0 0 16px" }}>Select why this participant is being removed from the route:</p>
+                    <Card style={{ marginBottom:10, border:`1px solid ${COLORS.yellow}55`, padding:14 }}>
+                      <p style={{ color: COLORS.yellow, fontSize:13, fontWeight:700, margin:"0 0 8px" }}>📅 Set a Return Date</p>
                       <input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)}
-                        style={{ width: "100%", padding: "10px 12px", background: COLORS.bg, border: `1px solid ${COLORS.border}`,
-                          borderRadius: 8, color: COLORS.text, fontSize: 14, boxSizing: "border-box", marginBottom: 8 }} />
-                      <Btn onClick={handleClientInactiveWithDate} color={COLORS.yellow} disabled={!returnDate}
-                        style={{ width: "100%" }}>Set Return Date & Deactivate</Btn>
+                        style={{ width:"100%", padding:"10px 12px", background: COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color: COLORS.text, fontSize:14, boxSizing:"border-box", marginBottom:8 }} />
+                      <Btn onClick={handleClientInactiveWithDate} color={COLORS.yellow} disabled={!returnDate} style={{ width:"100%" }}>Deactivate with Return Date</Btn>
                     </Card>
-
-                    {/* Option 2: No return date, still on roster */}
-                    <Card style={{ marginBottom: 10, border: `1px solid ${COLORS.blue}44`, padding: 14 }}>
-                      <p style={{ color: COLORS.blue, fontSize: 13, fontWeight: 700, margin: "0 0 6px" }}>⏸ No return date — Temporarily off route</p>
-                      <p style={{ color: COLORS.textMuted, fontSize: 11, margin: "0 0 8px" }}>Client stays on roster but removed from daily route until reactivated.</p>
-                      <Btn onClick={handleClientInactiveNoDate} color={COLORS.blue} style={{ width: "100%" }}>Deactivate Without Date</Btn>
+                    <Card style={{ marginBottom:10, border:`1px solid ${COLORS.blue}55`, padding:14 }}>
+                      <p style={{ color: COLORS.blue, fontSize:13, fontWeight:700, margin:"0 0 6px" }}>⏸ Temporarily Off Route</p>
+                      <p style={{ color: COLORS.textMuted, fontSize:11, margin:"0 0 8px" }}>Stays on roster, no return date set.</p>
+                      <Btn onClick={handleClientInactiveNoDate} color={COLORS.blue} style={{ width:"100%" }}>Deactivate — No Date</Btn>
                     </Card>
-
-                    {/* Option 3: Archive */}
-                    <Card style={{ marginBottom: 10, border: `1px solid ${COLORS.red}44`, padding: 14 }}>
-                      <p style={{ color: COLORS.red, fontSize: 13, fontWeight: 700, margin: "0 0 6px" }}>📦 Deactivate & Archive</p>
-                      <p style={{ color: COLORS.textMuted, fontSize: 11, margin: "0 0 8px" }}>Client is fully deactivated and moved to archive. Can be reactivated later.</p>
-                      <Btn onClick={handleClientArchive} color={COLORS.red} style={{ width: "100%" }}>Archive Client</Btn>
+                    <Card style={{ marginBottom:10, border:`1px solid ${COLORS.red}55`, padding:14 }}>
+                      <p style={{ color: COLORS.red, fontSize:13, fontWeight:700, margin:"0 0 6px" }}>📦 Archive Participant</p>
+                      <p style={{ color: COLORS.textMuted, fontSize:11, margin:"0 0 8px" }}>Fully removed from route. Can be reactivated later.</p>
+                      <Btn onClick={handleClientArchive} color={COLORS.red} style={{ width:"100%" }}>Archive</Btn>
                     </Card>
-
-                    <Btn outline onClick={() => setClientModal(null)} style={{ width: "100%", marginTop: 4 }}>Cancel</Btn>
+                    <Btn outline onClick={() => setClientModal(null)} style={{ width:"100%", marginTop:4 }}>Cancel</Btn>
                   </Card>
                 </div>
               )}
 
-              {/* Add Client Modal */}
+              {/* Add Participant Modal */}
               {showAddClient && (
-                <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-                  <Card style={{ width: "100%", maxWidth: 420 }}>
-                    <h3 style={{ color: COLORS.text, margin: "0 0 16px" }}>Add New Client</h3>
-                    <Input label="Client Name *" value={newClient.name} onChange={e => setNewClient(p => ({ ...p, name: e.target.value }))} placeholder="Full name" />
-                    <Input label="Address *" value={newClient.address} onChange={e => setNewClient(p => ({ ...p, address: e.target.value }))} placeholder="Full address" />
-                    <Input label="UCI Number" value={newClient.uci} onChange={e => setNewClient(p => ({ ...p, uci: e.target.value }))} placeholder="Optional" />
-                    <div style={{ marginBottom: 12 }}>
-                      <label style={{ display: "block", color: COLORS.textDim, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Assign to Route *</label>
-                      <select value={newClient.routeId} onChange={e => setNewClient(p => ({ ...p, routeId: e.target.value }))}
-                        style={{ width: "100%", padding: "10px 12px", background: COLORS.bg, border: `1px solid ${COLORS.border}`,
-                          borderRadius: 8, color: COLORS.text, fontSize: 14 }}>
+                <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+                  <Card style={{ width:"100%", maxWidth:440, maxHeight:"90vh", overflowY:"auto" }}>
+                    <h3 style={{ color: COLORS.text, margin:"0 0 16px" }}>Add New Participant</h3>
+                    <Input label="Full Name *" value={newClient.name} onChange={e => setNewClient(p=>({...p,name:e.target.value}))} placeholder="e.g. Smith, John" />
+                    <Input label="Home Address *" value={newClient.address} onChange={e => setNewClient(p=>({...p,address:e.target.value}))} placeholder="Participant's home address" />
+                    <div style={{ background:"#eff6ff", borderRadius:8, padding:"10px 12px", marginBottom:12 }}>
+                      <p style={{ color: COLORS.blue, fontSize:12, fontWeight:700, margin:"0 0 8px" }}>📍 Day Program / Work Site</p>
+                      <Input label="Program Name (e.g. PCS, CVTC, Galt Act)" value={newClient.dayProgram||''} onChange={e => setNewClient(p=>({...p,dayProgram:e.target.value}))} placeholder="e.g. PCS" />
+                      <Input label="Program Address" value={newClient.dropoffAddress||''} onChange={e => setNewClient(p=>({...p,dropoffAddress:e.target.value}))} placeholder="Drop-off address" />
+                    </div>
+                    <Input label="UCI Number" value={newClient.uci} onChange={e => setNewClient(p=>({...p,uci:e.target.value}))} placeholder="Optional" />
+                    <div style={{ marginBottom:12 }}>
+                      <label style={{ display:"block", color: COLORS.textDim, fontSize:12, marginBottom:4, fontWeight:600 }}>Assign to Route *</label>
+                      <select value={newClient.routeId} onChange={e => setNewClient(p=>({...p,routeId:e.target.value}))}
+                        style={{ width:"100%", padding:"10px 12px", background: COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color: COLORS.text, fontSize:14 }}>
                         <option value="">Select route...</option>
+                        {routes.map(r => <option key={r.id} value={r.id}>{r.name} — Driver: {r.driver}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                      <Btn onClick={handleAddClient} style={{ flex:1 }}>Add Participant</Btn>
+                      <Btn outline onClick={() => setShowAddClient(false)} style={{ flex:1 }}>Cancel</Btn>
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {/* Edit Participant Modal */}
+              {editClientData && (
+                <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+                  <Card style={{ width:"100%", maxWidth:440, maxHeight:"90vh", overflowY:"auto" }}>
+                    <h3 style={{ color: COLORS.text, margin:"0 0 16px" }}>✏️ Edit Participant</h3>
+                    <Input label="Full Name" value={editClientData.client.name}
+                      onChange={e => setEditClientData(p=>({...p, client:{...p.client, name:e.target.value}}))} />
+                    <Input label="Home Address" value={editClientData.client.address}
+                      onChange={e => setEditClientData(p=>({...p, client:{...p.client, address:e.target.value}}))} />
+                    <div style={{ background:"#eff6ff", borderRadius:8, padding:"10px 12px", marginBottom:12 }}>
+                      <p style={{ color: COLORS.blue, fontSize:12, fontWeight:700, margin:"0 0 8px" }}>📍 Day Program / Work Site Drop-off</p>
+                      <Input label="Program Name (e.g. PCS, CVTC, Galt Act)" value={editClientData.client.dayProgram||''}
+                        onChange={e => setEditClientData(p=>({...p, client:{...p.client, dayProgram:e.target.value}}))}
+                        placeholder="e.g. PCS" />
+                      <Input label="Program Drop-off Address" value={editClientData.client.dropoffAddress||''}
+                        onChange={e => setEditClientData(p=>({...p, client:{...p.client, dropoffAddress:e.target.value}}))}
+                        placeholder="Full drop-off address" />
+                    </div>
+                    <Input label="UCI Number" value={editClientData.client.uci||''}
+                      onChange={e => setEditClientData(p=>({...p, client:{...p.client, uci:e.target.value}}))}
+                      placeholder="Optional" />
+                    <div style={{ marginBottom:12 }}>
+                      <label style={{ display:"block", color: COLORS.textDim, fontSize:12, marginBottom:4, fontWeight:600 }}>Move to Different Route</label>
+                      <select value={editClientData.routeId}
+                        onChange={e => setEditClientData(p=>({...p, routeId:e.target.value}))}
+                        style={{ width:"100%", padding:"10px 12px", background: COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color: COLORS.text, fontSize:14 }}>
                         {routes.map(r => <option key={r.id} value={r.id}>{r.name} — {r.driver}</option>)}
                       </select>
                     </div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <Btn onClick={handleAddClient} style={{ flex: 1 }}>Add Client</Btn>
-                      <Btn outline onClick={() => setShowAddClient(false)} style={{ flex: 1 }}>Cancel</Btn>
+                    <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                      <Btn onClick={() => {
+                        const { routeId, client } = editClientData;
+                        const origRouteId = routes.find(r => r.clients.some(c => c.name === client.name))?.id;
+                        setRoutes(prev => prev.map(r => {
+                          if (origRouteId && r.id === origRouteId && r.id !== routeId)
+                            return { ...r, clients: r.clients.filter(c => c.name !== client.name) };
+                          if (r.id === routeId) {
+                            const exists = r.clients.some(c => c.name === client.name);
+                            if (exists) return { ...r, clients: r.clients.map(c => c.name === client.name ? client : c) };
+                            return { ...r, clients: [...r.clients, client] };
+                          }
+                          return r;
+                        }));
+                        setEditClientData(null);
+                      }} style={{ flex:1 }}>Save Changes</Btn>
+                      <Btn outline onClick={() => setEditClientData(null)} style={{ flex:1 }}>Cancel</Btn>
                     </div>
                   </Card>
                 </div>
               )}
             </div>
           )}
+
+          {/* MASTER PARTICIPANTS TAB */}
+          {tab === "participants" && (() => {
+            // Build master list — deduplicated, with all routes they appear on
+            const masterMap = {};
+            routes.forEach(route => {
+              (route.clients || []).forEach(cl => {
+                if (!masterMap[cl.name]) {
+                  masterMap[cl.name] = { ...cl, routes: [] };
+                }
+                masterMap[cl.name].routes.push({ id: route.id, name: route.name, driver: route.driver, status: cl.status });
+              });
+            });
+            const masterList = Object.values(masterMap).sort((a,b) => {
+              const la = a.name.split(', ')[0] || a.name;
+              const lb = b.name.split(', ')[0] || b.name;
+              return la.localeCompare(lb);
+            });
+            const activeList = masterList.filter(p => !p.routes.every(r => r.status === 'archived'));
+            const archivedList = masterList.filter(p => p.routes.every(r => r.status === 'archived'));
+
+            return (
+              <div>
+                {/* Header */}
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+                  <div>
+                    <h3 style={{ color: COLORS.text, margin:0 }}>Master Participant List</h3>
+                    <p style={{ color: COLORS.textMuted, fontSize:11, margin:"2px 0 0" }}>{activeList.length} active · {archivedList.length} archived</p>
+                  </div>
+                  <Btn small onClick={() => setShowAddClient(true)}>+ Add Participant</Btn>
+                </div>
+
+                <p style={{ color: COLORS.textDim, fontSize:11, margin:"0 0 12px", background:"#fffbeb", padding:"8px 10px", borderRadius:8, borderLeft:`3px solid ${COLORS.yellow}` }}>
+                  ⚠️ Archiving a participant here removes them from <strong>all routes</strong>.
+                </p>
+
+                {/* Active participants */}
+                {activeList.map(p => (
+                  <Card key={p.name} style={{ marginBottom:8 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <p style={{ color: COLORS.text, margin:0, fontSize:14, fontWeight:700 }}>{p.name}</p>
+                        <p style={{ color: COLORS.textMuted, margin:"2px 0 0", fontSize:11 }}>🏠 {p.address}</p>
+                        {p.dayProgram && <p style={{ color: COLORS.accent, margin:"2px 0 0", fontSize:11 }}>📍 {p.dayProgram} — {p.dropoffAddress}</p>}
+                        {p.uci && <p style={{ color: COLORS.textDim, margin:"2px 0 0", fontSize:10 }}>UCI: {p.uci}</p>}
+                        {/* Show which routes */}
+                        <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginTop:5 }}>
+                          {p.routes.map(r => (
+                            <span key={r.id} style={{
+                              fontSize:10, padding:"2px 7px", borderRadius:10, fontWeight:600,
+                              background: r.status==='archived'?'#fee2e2':r.status==='inactive'?'#fef3c7':'#dcfce7',
+                              color: r.status==='archived'?COLORS.red:r.status==='inactive'?'#92400e':'#166534',
+                            }}>
+                              {r.name} · {r.driver}{r.status!=='active'?` (${r.status})`:''}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+                        <button onClick={() => {
+                          const affectedRoutes = routes.filter(r => r.clients.some(c => c.name === p.name && c.status !== 'archived'));
+                          setArchiveConfirm({ participant: p, affectedRoutes });
+                        }}
+                          style={{ background:"none", border:`1px solid ${COLORS.red}`, color: COLORS.red, cursor:"pointer",
+                            fontSize:11, padding:"5px 10px", borderRadius:6, fontWeight:600, whiteSpace:"nowrap" }}>
+                          📦 Archive All
+                        </button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+
+                {/* Archived participants */}
+                {archivedList.length > 0 && (
+                  <details style={{ marginTop:16 }}>
+                    <summary style={{ color: COLORS.textMuted, fontSize:13, cursor:"pointer", padding:"8px 0", userSelect:"none", fontWeight:600 }}>
+                      📦 {archivedList.length} archived participant{archivedList.length>1?'s':''}
+                    </summary>
+                    {archivedList.map(p => (
+                      <Card key={p.name} style={{ marginBottom:8, opacity:0.6, marginTop:6 }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                          <div>
+                            <p style={{ color: COLORS.text, margin:0, fontSize:13, fontWeight:600 }}>{p.name}</p>
+                            <Badge color={COLORS.red}>Archived from all routes</Badge>
+                          </div>
+                          <Btn small color={COLORS.accent} onClick={() => {
+                            setRoutes(prev => prev.map(r => ({
+                              ...r,
+                              clients: r.clients.map(c => c.name===p.name ? {...c, active:true, status:'active', returnDate:''} : c)
+                            })));
+                          }}>Reactivate All</Btn>
+                        </div>
+                      </Card>
+                    ))}
+                  </details>
+                )}
+
+                {/* Archive Confirmation Modal */}
+                {archiveConfirm && (
+                  <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.55)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+                    <Card style={{ width:"100%", maxWidth:420 }}>
+                      <h3 style={{ color: COLORS.red, margin:"0 0 8px" }}>📦 Archive Participant</h3>
+                      <p style={{ color: COLORS.text, fontWeight:700, fontSize:15, margin:"0 0 6px" }}>{archiveConfirm.participant.name}</p>
+                      <p style={{ color: COLORS.textDim, fontSize:13, margin:"0 0 12px" }}>
+                        This will remove them from all active routes. You can reactivate them later.
+                      </p>
+                      <p style={{ color: COLORS.text, fontSize:13, fontWeight:600, margin:"0 0 8px" }}>Routes that will be affected:</p>
+                      {archiveConfirm.affectedRoutes.map(r => (
+                        <div key={r.id} style={{ padding:"6px 10px", background:"#fef2f2", borderRadius:6, marginBottom:4, borderLeft:`3px solid ${COLORS.red}` }}>
+                          <p style={{ margin:0, fontSize:13, fontWeight:600, color: COLORS.text }}>{r.name}</p>
+                          <p style={{ margin:0, fontSize:11, color: COLORS.textMuted }}>Driver: {r.driver}</p>
+                        </div>
+                      ))}
+                      <div style={{ display:"flex", gap:8, marginTop:16 }}>
+                        <Btn onClick={() => {
+                          const name = archiveConfirm.participant.name;
+                          const affected = archiveConfirm.affectedRoutes;
+                          setRoutes(prev => prev.map(r => ({
+                            ...r,
+                            clients: r.clients.map(c => c.name===name ? {...c, active:false, status:'archived', returnDate:''} : c)
+                          })));
+                          setArchiveConfirm(null);
+                          setArchiveDone({ name, affectedRoutes: affected });
+                        }} color={COLORS.red} style={{ flex:1, fontWeight:700 }}>
+                          ✓ Proceed — Archive
+                        </Btn>
+                        <Btn outline onClick={() => setArchiveConfirm(null)} style={{ flex:1 }}>Cancel</Btn>
+                      </div>
+                    </Card>
+                  </div>
+                )}
+
+                {/* Archive Done Modal — shows what was affected */}
+                {archiveDone && (
+                  <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.55)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+                    <Card style={{ width:"100%", maxWidth:420 }}>
+                      <div style={{ textAlign:"center", marginBottom:12 }}>
+                        <p style={{ fontSize:36, margin:"0 0 4px" }}>✅</p>
+                        <h3 style={{ color: COLORS.text, margin:0 }}>{archiveDone.name} Archived</h3>
+                      </div>
+                      <p style={{ color: COLORS.textDim, fontSize:13, margin:"0 0 10px" }}>Removed from the following routes:</p>
+                      {archiveDone.affectedRoutes.map(r => (
+                        <div key={r.id} style={{ padding:"6px 10px", background:"#f0fdf4", borderRadius:6, marginBottom:4, borderLeft:`3px solid ${COLORS.accent}` }}>
+                          <p style={{ margin:0, fontSize:13, fontWeight:600, color: COLORS.text }}>{r.name} — {r.driver}</p>
+                        </div>
+                      ))}
+                      <Btn onClick={() => setArchiveDone(null)} style={{ width:"100%", marginTop:14 }}>Done</Btn>
+                    </Card>
+                  </div>
+                )}
+
+                {/* Add Participant modal reuse */}
+                {showAddClient && (
+                  <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+                    <Card style={{ width:"100%", maxWidth:440, maxHeight:"90vh", overflowY:"auto" }}>
+                      <h3 style={{ color: COLORS.text, margin:"0 0 16px" }}>Add New Participant</h3>
+                      <Input label="Full Name *" value={newClient.name} onChange={e => setNewClient(p=>({...p,name:e.target.value}))} placeholder="e.g. Smith, John" />
+                      <Input label="Home Address *" value={newClient.address} onChange={e => setNewClient(p=>({...p,address:e.target.value}))} placeholder="Participant's home address" />
+                      <div style={{ background:"#eff6ff", borderRadius:8, padding:"10px 12px", marginBottom:12 }}>
+                        <p style={{ color: COLORS.blue, fontSize:12, fontWeight:700, margin:"0 0 8px" }}>📍 Day Program / Work Site</p>
+                        <Input label="Program Name" value={newClient.dayProgram||''} onChange={e => setNewClient(p=>({...p,dayProgram:e.target.value}))} placeholder="e.g. PCS" />
+                        <Input label="Program Address" value={newClient.dropoffAddress||''} onChange={e => setNewClient(p=>({...p,dropoffAddress:e.target.value}))} placeholder="Drop-off address" />
+                      </div>
+                      <Input label="UCI Number" value={newClient.uci} onChange={e => setNewClient(p=>({...p,uci:e.target.value}))} placeholder="Optional" />
+                      <div style={{ marginBottom:12 }}>
+                        <label style={{ display:"block", color: COLORS.textDim, fontSize:12, marginBottom:4, fontWeight:600 }}>Assign to Route *</label>
+                        <select value={newClient.routeId} onChange={e => setNewClient(p=>({...p,routeId:e.target.value}))}
+                          style={{ width:"100%", padding:"10px 12px", background: COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color: COLORS.text, fontSize:14 }}>
+                          <option value="">Select route...</option>
+                          {routes.map(r => <option key={r.id} value={r.id}>{r.name} — Driver: {r.driver}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                        <Btn onClick={handleAddClient} style={{ flex:1 }}>Add Participant</Btn>
+                        <Btn outline onClick={() => setShowAddClient(false)} style={{ flex:1 }}>Cancel</Btn>
+                      </div>
+                    </Card>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* SCHEDULE TAB */}
           {tab === "schedule" && (
@@ -1852,55 +2224,195 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
             </div>
           )}
 
-          {/* USERS TAB */}
+          {/* USERS / DRIVERS TAB */}
           {tab === "users" && (
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <h3 style={{ color: COLORS.text, margin: 0 }}>User Accounts</h3>
-                <Btn small onClick={() => setShowAddDriver(true)}>+ Add User</Btn>
+              {/* Stats */}
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
+                {[
+                  { label:"Drivers", value: users.filter(u=>u.role==="driver").length, color: COLORS.accent },
+                  { label:"Managers", value: users.filter(u=>u.role==="manager").length, color: COLORS.yellow },
+                  { label:"Admins", value: users.filter(u=>u.role==="admin").length, color: COLORS.red },
+                ].map(s => (
+                  <Card key={s.label} style={{ textAlign:"center", padding:10 }}>
+                    <p style={{ color:s.color, fontSize:20, fontWeight:800, margin:0 }}>{s.value}</p>
+                    <p style={{ color: COLORS.textMuted, fontSize:10, margin:"2px 0 0" }}>{s.label}</p>
+                  </Card>
+                ))}
               </div>
-              {users.map(u => (
-                <Card key={u.id} style={{ marginBottom: 8 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <p style={{ color: COLORS.text, margin: 0, fontSize: 14 }}>{u.name}</p>
-                      <p style={{ color: COLORS.textMuted, margin: 0, fontSize: 12 }}>@{u.username}</p>
+
+              {/* Drivers section */}
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                <h4 style={{ color: COLORS.text, margin:0, fontSize:14 }}>🚐 Drivers</h4>
+                <Btn small onClick={() => { setNewDriver({name:'',username:'',password:'',role:'driver'}); setShowAddDriver(true); }}>+ Add Driver</Btn>
+              </div>
+              {users.filter(u => u.role === "driver").map(u => {
+                const assignedRoutes = routes.filter(r => r.driver === u.name);
+                return (
+                  <Card key={u.id} style={{ marginBottom:8 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                      <div style={{ flex:1 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:2 }}>
+                          <p style={{ color: COLORS.text, margin:0, fontSize:14, fontWeight:600 }}>🧑‍✈️ {u.name}</p>
+                          <Badge color={COLORS.accent}>Driver</Badge>
+                        </div>
+                        <p style={{ color: COLORS.textMuted, margin:0, fontSize:11 }}>Login: @{u.username}</p>
+                        {assignedRoutes.length > 0 && (
+                          <p style={{ color: COLORS.accent, margin:"3px 0 0", fontSize:11 }}>
+                            Assigned: {assignedRoutes.map(r=>r.name).join(', ')}
+                          </p>
+                        )}
+                      </div>
+                      <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                        <button onClick={() => { setEditUser(u); setShowEditUser(true); }}
+                          title="Edit" style={{ background:"none", border:`1px solid ${COLORS.border}`, color: COLORS.textMuted, cursor:"pointer", fontSize:12, padding:"4px 8px", borderRadius:6 }}>✏️</button>
+                        <button onClick={() => {
+                          if (assignedRoutes.length > 0 && !window.confirm(`${u.name} is assigned to ${assignedRoutes.map(r=>r.name).join(', ')}. Remove anyway?`)) return;
+                          handleRemoveUser(u.id);
+                        }}
+                          title="Remove" style={{ background:"none", border:"none", color: COLORS.red, cursor:"pointer", fontSize:16, padding:"4px 6px" }}>✕</button>
+                      </div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <Badge color={u.role === "admin" ? COLORS.red : u.role === "manager" ? COLORS.yellow : COLORS.accent}>{u.role}</Badge>
+                  </Card>
+                );
+              })}
+
+              {users.filter(u=>u.role==="driver").length===0 && (
+                <Card style={{ marginBottom:12, textAlign:"center" }}>
+                  <p style={{ color: COLORS.textMuted, fontSize:12 }}>No drivers added yet</p>
+                </Card>
+              )}
+
+              {/* Managers section */}
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", margin:"16px 0 10px" }}>
+                <h4 style={{ color: COLORS.text, margin:0, fontSize:14 }}>👔 Managers</h4>
+                <Btn small onClick={() => { setNewDriver({name:'',username:'',password:'',role:'manager'}); setShowAddDriver(true); }}>+ Add Manager</Btn>
+              </div>
+              {users.filter(u => u.role === "manager").map(u => (
+                <Card key={u.id} style={{ marginBottom:8 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <div>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <p style={{ color: COLORS.text, margin:0, fontSize:14, fontWeight:600 }}>{u.name}</p>
+                        <Badge color={COLORS.yellow}>Manager</Badge>
+                      </div>
+                      <p style={{ color: COLORS.textMuted, margin:0, fontSize:11 }}>Login: @{u.username}</p>
+                    </div>
+                    <div style={{ display:"flex", gap:6 }}>
+                      <button onClick={() => { setEditUser(u); setShowEditUser(true); }}
+                        style={{ background:"none", border:`1px solid ${COLORS.border}`, color: COLORS.textMuted, cursor:"pointer", fontSize:12, padding:"4px 8px", borderRadius:6 }}>✏️</button>
                       <button onClick={() => handleRemoveUser(u.id)}
-                        style={{ background: "none", border: "none", color: COLORS.red, cursor: "pointer", fontSize: 14, padding: 4 }}>✕</button>
+                        style={{ background:"none", border:"none", color: COLORS.red, cursor:"pointer", fontSize:16, padding:"4px 6px" }}>✕</button>
                     </div>
                   </div>
                 </Card>
               ))}
 
+              {/* Admins section */}
+              {user.role === "admin" && (
+                <>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", margin:"16px 0 10px" }}>
+                    <h4 style={{ color: COLORS.text, margin:0, fontSize:14 }}>🔐 System Admins</h4>
+                    <Btn small onClick={() => { setNewDriver({name:'',username:'',password:'',role:'admin'}); setShowAddDriver(true); }}>+ Add Admin</Btn>
+                  </div>
+                  {users.filter(u => u.role === "admin").map(u => (
+                    <Card key={u.id} style={{ marginBottom:8 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                        <div>
+                          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                            <p style={{ color: COLORS.text, margin:0, fontSize:14, fontWeight:600 }}>{u.name}</p>
+                            <Badge color={COLORS.red}>Admin</Badge>
+                          </div>
+                          <p style={{ color: COLORS.textMuted, margin:0, fontSize:11 }}>Login: @{u.username}</p>
+                        </div>
+                        <div style={{ display:"flex", gap:6 }}>
+                          <button onClick={() => { setEditUser(u); setShowEditUser(true); }}
+                            style={{ background:"none", border:`1px solid ${COLORS.border}`, color: COLORS.textMuted, cursor:"pointer", fontSize:12, padding:"4px 8px", borderRadius:6 }}>✏️</button>
+                          {users.filter(u=>u.role==="admin").length > 1 && (
+                            <button onClick={() => handleRemoveUser(u.id)}
+                              style={{ background:"none", border:"none", color: COLORS.red, cursor:"pointer", fontSize:16, padding:"4px 6px" }}>✕</button>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </>
+              )}
+
               {/* Add User Modal */}
               {showAddDriver && (
-                <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.4)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-                  <Card style={{ width: "100%", maxWidth: 420 }}>
-                    <h3 style={{ color: COLORS.text, margin: "0 0 16px" }}>Add New User</h3>
-                    <Input label="Full Name *" value={newDriver.name} onChange={e => setNewDriver(p => ({ ...p, name: e.target.value }))} placeholder="e.g. John Smith" />
-                    <Input label="Username *" value={newDriver.username} onChange={e => setNewDriver(p => ({ ...p, username: e.target.value }))} placeholder="Login username" />
-                    <Input label="Password *" type="password" value={newDriver.password} onChange={e => setNewDriver(p => ({ ...p, password: e.target.value }))} placeholder="Login password" />
-                    <div style={{ marginBottom: 12 }}>
-                      <label style={{ display: "block", color: COLORS.textDim, fontSize: 12, marginBottom: 4, fontWeight: 600 }}>Role *</label>
-                      <select value={newDriver.role} onChange={e => setNewDriver(p => ({ ...p, role: e.target.value }))}
-                        style={{ width: "100%", padding: "10px 12px", background: COLORS.bg, border: `1px solid ${COLORS.border}`,
-                          borderRadius: 8, color: COLORS.text, fontSize: 14 }}>
+                <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+                  <Card style={{ width:"100%", maxWidth:420 }}>
+                    <h3 style={{ color: COLORS.text, margin:"0 0 16px" }}>
+                      Add {newDriver.role === 'driver' ? 'Driver' : newDriver.role === 'manager' ? 'Manager' : 'Admin'}
+                    </h3>
+                    <Input label="Full Name *" value={newDriver.name} onChange={e => setNewDriver(p=>({...p,name:e.target.value}))} placeholder="e.g. John Smith" />
+                    <Input label="Username *" value={newDriver.username} onChange={e => setNewDriver(p=>({...p,username:e.target.value}))} placeholder="Login username (no spaces)" />
+                    <Input label="Password *" type="password" value={newDriver.password} onChange={e => setNewDriver(p=>({...p,password:e.target.value}))} placeholder="Login password" />
+                    <div style={{ marginBottom:12 }}>
+                      <label style={{ display:"block", color: COLORS.textDim, fontSize:12, marginBottom:4, fontWeight:600 }}>Role *</label>
+                      <select value={newDriver.role} onChange={e => setNewDriver(p=>({...p,role:e.target.value}))}
+                        style={{ width:"100%", padding:"10px 12px", background: COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color: COLORS.text, fontSize:14 }}>
                         <option value="driver">Driver</option>
                         <option value="manager">Manager</option>
                         {user.role === "admin" && <option value="admin">System Admin</option>}
                       </select>
                     </div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <Btn onClick={handleAddDriver} style={{ flex: 1 }}>Add User</Btn>
-                      <Btn outline onClick={() => setShowAddDriver(false)} style={{ flex: 1 }}>Cancel</Btn>
+                    {newDriver.role === 'driver' && (
+                      <div style={{ marginBottom:12 }}>
+                        <label style={{ display:"block", color: COLORS.textDim, fontSize:12, marginBottom:4, fontWeight:600 }}>Assign to Route (optional)</label>
+                        <select onChange={e => { if(e.target.value) setRoutes(prev=>prev.map(r=>r.id===e.target.value?{...r,driver:newDriver.name}:r)); }}
+                          style={{ width:"100%", padding:"10px 12px", background: COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color: COLORS.text, fontSize:14 }}>
+                          <option value="">Don't assign yet</option>
+                          {routes.map(r => <option key={r.id} value={r.id}>{r.name} (currently: {r.driver||'unassigned'})</option>)}
+                        </select>
+                      </div>
+                    )}
+                    <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                      <Btn onClick={handleAddDriver} style={{ flex:1 }}>Add</Btn>
+                      <Btn outline onClick={() => setShowAddDriver(false)} style={{ flex:1 }}>Cancel</Btn>
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {/* Edit User Modal */}
+              {showEditUser && editUser && (
+                <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+                  <Card style={{ width:"100%", maxWidth:420 }}>
+                    <h3 style={{ color: COLORS.text, margin:"0 0 16px" }}>Edit — {editUser.name}</h3>
+                    <Input label="Full Name" value={editUser.name} onChange={e => setEditUser(p=>({...p,name:e.target.value}))} />
+                    <Input label="Username" value={editUser.username} onChange={e => setEditUser(p=>({...p,username:e.target.value}))} />
+                    <Input label="New Password (leave blank to keep)" type="password" value={editUser.newPassword||''} onChange={e => setEditUser(p=>({...p,newPassword:e.target.value}))} placeholder="Leave blank to keep current" />
+                    {editUser.role === 'driver' && (
+                      <div style={{ marginBottom:12 }}>
+                        <label style={{ display:"block", color: COLORS.textDim, fontSize:12, marginBottom:4, fontWeight:600 }}>Reassign Route</label>
+                        <select onChange={e => { if(e.target.value) { setRoutes(prev=>prev.map(r=>r.id===e.target.value?{...r,driver:editUser.name}:r)); }}}
+                          style={{ width:"100%", padding:"10px 12px", background: COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color: COLORS.text, fontSize:14 }}>
+                          <option value="">Select route to assign...</option>
+                          {routes.map(r => <option key={r.id} value={r.id}>{r.name} (currently: {r.driver||'unassigned'})</option>)}
+                        </select>
+                      </div>
+                    )}
+                    <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                      <Btn onClick={() => {
+                        setUsers(prev => prev.map(u => u.id !== editUser.id ? u : {
+                          ...u, name: editUser.name, username: editUser.username,
+                          password: editUser.newPassword ? editUser.newPassword : u.password
+                        }));
+                        setShowEditUser(false); setEditUser(null);
+                      }} style={{ flex:1 }}>Save Changes</Btn>
+                      <Btn outline onClick={() => { setShowEditUser(false); setEditUser(null); }} style={{ flex:1 }}>Cancel</Btn>
                     </div>
                   </Card>
                 </div>
               )}
             </div>
+          )}
+
+          {/* REPORTS TAB */}
+          {tab === "reports" && (
+            <ReportsTab logs={logs} routes={routes} />
           )}
         </div>
       </div>
@@ -1908,50 +2420,872 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
   );
 };
 
+// ============ REPORTS TAB COMPONENT ============
+function ReportsTab({ logs, routes }) {
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
+
+  // Build list of months that have log data, plus current month
+  const monthsWithData = [...new Set(logs.map(l => l.date ? l.date.slice(0,7) : null).filter(Boolean))];
+  if (!monthsWithData.includes(defaultMonth)) monthsWithData.push(defaultMonth);
+  monthsWithData.sort().reverse();
+
+  const [year, month] = selectedMonth.split('-').map(Number);
+  const monthName = new Date(year, month-1, 1).toLocaleString('en-US', {month:'long', year:'numeric'});
+  const bizDays = buildBizDays(year, month);
+  const monthLogs = logs.filter(l => l.date && l.date.startsWith(selectedMonth));
+
+  // Summary stats for the selected month
+  const routeStats = routes.map(route => {
+    const rLogs = monthLogs.filter(l => l.routeId === route.id);
+    const amDays = rLogs.filter(l => l.period === 'AM').length;
+    const pmDays = rLogs.filter(l => l.period === 'PM').length;
+    const totalMiles = rLogs.reduce((s, l) => s + (parseFloat(l.totalMiles) || 0), 0);
+    return { route, amDays, pmDays, totalMiles };
+  });
+
+  const totalSubmissions = monthLogs.length;
+  const totalMilesAll = routeStats.reduce((s, r) => s + r.totalMiles, 0);
+
+  // Client attendance summary for the month
+  const allClients = [];
+  const seen = new Set();
+  routes.forEach(route => {
+    (route.clients || []).forEach(cl => {
+      if (!seen.has(cl.name)) {
+        allClients.push({ ...cl, routeName: route.name, routeId: route.id });
+        seen.add(cl.name);
+      }
+    });
+  });
+  allClients.sort((a,b) => (a.name.split(', ')[0]||a.name).localeCompare(b.name.split(', ')[0]||b.name));
+
+  const clientAttendance = allClients.map(cl => {
+    let trips = 0, noShows = 0, absents = 0;
+    bizDays.forEach(day => {
+      const dateStr = day.toISOString().slice(0,10);
+      const dayLogs = monthLogs.filter(l => l.date === dateStr && l.routeId === cl.routeId);
+      dayLogs.forEach(l => {
+        const status = l.clientStatuses && l.clientStatuses[cl.name];
+        if (status === 'present') trips++;
+        else if (status === 'noshow') noShows++;
+        else if (status === 'absent') absents++;
+      });
+    });
+    return { ...cl, trips, noShows, absents };
+  });
+
+  const handleDownloadKTS = () => {
+    const blob = generateKTSTrackerBlob(monthLogs, routes, selectedMonth);
+    if (blob) downloadBlob(blob, `KTS_Client_Tracker_${monthName.replace(' ','_')}.xlsx`);
+  };
+
+  const handleDownloadPriority = () => {
+    const blob = generatePriorityTrackerBlob(monthLogs, selectedMonth);
+    if (blob) downloadBlob(blob, `Priority_Transportation_Tracker_${monthName.replace(' ','_')}.xlsx`);
+  };
+
+  const handleDownloadHA0935 = () => {
+    const blob = generateHA0935Blob(monthLogs, routes, selectedMonth);
+    if (blob) downloadBlob(blob, `HA0935_Khan_Transportation_${monthName.replace(' ','_')}.xlsx`);
+  };
+
+  const handleDownloadHV0713 = () => {
+    const blob = generateHV0713Blob(monthLogs, selectedMonth);
+    if (blob) downloadBlob(blob, `HV0713_Priority_Transportation_${monthName.replace(' ','_')}.xlsx`);
+  };
+
+  return (
+    <div>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+        <h3 style={{ color: COLORS.text, margin: 0 }}>📥 Monthly Reports</h3>
+        <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
+          style={{ padding:'8px 12px', background: COLORS.card, border:`1px solid ${COLORS.border}`,
+            borderRadius:8, color: COLORS.text, fontSize:13 }}>
+          {monthsWithData.map(m => {
+            const [y,mo] = m.split('-').map(Number);
+            const label = new Date(y,mo-1,1).toLocaleString('en-US',{month:'long',year:'numeric'});
+            return <option key={m} value={m}>{label}</option>;
+          })}
+        </select>
+      </div>
+
+      {/* Month Summary */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))', gap:8, marginBottom:16 }}>
+        {[
+          { label:'Submissions', value: totalSubmissions, color: COLORS.accent },
+          { label:'Business Days', value: bizDays.length, color: COLORS.blue },
+          { label:'Total Miles', value: totalMilesAll.toFixed(0), color: COLORS.yellow },
+          { label:'Active Clients', value: allClients.filter(c=>c.active!==false).length, color: COLORS.accentLight },
+        ].map(s => (
+          <Card key={s.label} style={{ textAlign:'center', padding:10 }}>
+            <p style={{ color:s.color, fontSize:20, fontWeight:800, margin:0 }}>{s.value}</p>
+            <p style={{ color: COLORS.textMuted, fontSize:11, margin:'2px 0 0' }}>{s.label}</p>
+          </Card>
+        ))}
+      </div>
+
+      {/* Download Section */}
+      <Card style={{ marginBottom:16, border:`2px solid ${COLORS.accent}33` }}>
+        <h4 style={{ color: COLORS.text, margin:'0 0 6px', fontSize:15 }}>📥 Download Excel Reports</h4>
+        <p style={{ color: COLORS.textDim, fontSize:12, margin:'0 0 14px' }}>
+          Files match your HA0935/HV0713 template exactly — gray weekends, yellow weekdays, blue headers. Data auto-fills from driver submissions.
+        </p>
+
+        {/* KTS Khan Transportation */}
+        <div style={{ background:'#f0f9ff', borderRadius:10, padding:14, marginBottom:10 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+            <span style={{ fontSize:20 }}>🚐</span>
+            <div>
+              <p style={{ color: COLORS.text, fontWeight:700, margin:0, fontSize:14 }}>KTS — Khan Transportation</p>
+              <p style={{ color: COLORS.textMuted, fontSize:11, margin:0 }}>HA0935 · Routes 1–10 · {monthName}</p>
+            </div>
+          </div>
+          <button onClick={handleDownloadKTS}
+            style={{ width:'100%', padding:'14px', background: COLORS.accent, color:'#fff', border:'none',
+              borderRadius:10, fontSize:14, fontWeight:700, cursor:'pointer', marginBottom:8,
+              display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+            <span style={{ fontSize:18 }}>📊</span> Download KTS Client Tracker (.xlsx)
+          </button>
+          <p style={{ color: COLORS.textDim, fontSize:10, margin:0, textAlign:'center' }}>
+            5 tabs: Route Detail · Daily Attendance · Route Mileage · Daily Total · Client Tracker
+          </p>
+        </div>
+
+        {/* Priority Transportation */}
+        <div style={{ background:'#f0fff4', borderRadius:10, padding:14 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+            <span style={{ fontSize:20 }}>🚌</span>
+            <div>
+              <p style={{ color: COLORS.text, fontWeight:700, margin:0, fontSize:14 }}>Priority Transportation</p>
+              <p style={{ color: COLORS.textMuted, fontSize:11, margin:0 }}>HV0713 · Routes 6770–6774 · {monthName}</p>
+            </div>
+          </div>
+          <button onClick={handleDownloadPriority}
+            style={{ width:'100%', padding:'14px', background:'#16a34a', color:'#fff', border:'none',
+              borderRadius:10, fontSize:14, fontWeight:700, cursor:'pointer', marginBottom:8,
+              display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+            <span style={{ fontSize:18 }}>📊</span> Download Priority Tracker (.xlsx)
+          </button>
+          <p style={{ color: COLORS.textDim, fontSize:10, margin:0, textAlign:'center' }}>
+            2 tabs: Route Detail · Daily Attendance Report
+          </p>
+        </div>
+
+        <div style={{ marginTop:12, padding:'10px 12px', background:'#fffbeb', borderRadius:8, borderLeft:`3px solid ${COLORS.yellow}` }}>
+          <p style={{ color:'#92400e', fontSize:11, margin:0, fontWeight:600 }}>
+            💡 Auto-download: When a new month begins, the app will prompt you to download the previous month automatically.
+          </p>
+        </div>
+      </Card>
+
+      {/* Route Detail Table */}
+      <Card style={{ marginBottom:16 }}>
+        <h4 style={{ color: COLORS.text, margin:'0 0 12px' }}>Route Detail — AM/PM Submissions</h4>
+        <p style={{ color: COLORS.textDim, fontSize:11, margin:'0 0 8px' }}>
+          1 = submitted, blank = not submitted. This feeds directly into the HA0935 Route Detail form.
+        </p>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+            <thead>
+              <tr>
+                <th style={{ padding:'6px 8px', background: COLORS.bg, color: COLORS.text, textAlign:'left', borderBottom:`1px solid ${COLORS.border}`, minWidth:80 }}>Route</th>
+                <th style={{ padding:'6px 4px', background: COLORS.bg, color: COLORS.text, textAlign:'center', borderBottom:`1px solid ${COLORS.border}`, minWidth:32 }}>Seg</th>
+                {bizDays.slice(0,15).map(d => (
+                  <th key={d.toISOString()} style={{ padding:'4px 2px', background: COLORS.bg, color: COLORS.textMuted, textAlign:'center', borderBottom:`1px solid ${COLORS.border}`, minWidth:28, fontSize:9 }}>
+                    {d.getMonth()+1}/{d.getDate()}
+                  </th>
+                ))}
+                <th style={{ padding:'6px 4px', background: COLORS.bg, color: COLORS.accent, textAlign:'center', borderBottom:`1px solid ${COLORS.border}` }}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {routeStats.map(({ route, amDays, pmDays }) => (
+                <React.Fragment key={route.id}>
+                  {['AM','PM'].map(period => (
+                    <tr key={period} style={{ background: period === 'PM' ? COLORS.bg : COLORS.card }}>
+                      <td style={{ padding:'4px 8px', color: COLORS.text, borderBottom:`1px solid ${COLORS.border}`, fontWeight: period === 'AM' ? 600 : 400 }}>
+                        {period === 'AM' ? route.name : ''}
+                      </td>
+                      <td style={{ padding:'4px 4px', color: COLORS.textMuted, textAlign:'center', borderBottom:`1px solid ${COLORS.border}`, fontSize:10 }}>{period}</td>
+                      {bizDays.slice(0,15).map(d => {
+                        const dateStr = d.toISOString().slice(0,10);
+                        const submitted = monthLogs.some(l => l.date === dateStr && l.routeId === route.id && l.period === period);
+                        return (
+                          <td key={d.toISOString()} style={{ padding:'4px 2px', textAlign:'center', borderBottom:`1px solid ${COLORS.border}`,
+                            background: submitted ? '#e6ffe6' : 'transparent', color: submitted ? '#166534' : COLORS.textMuted }}>
+                            {submitted ? '1' : '·'}
+                          </td>
+                        );
+                      })}
+                      <td style={{ padding:'4px 4px', textAlign:'center', color: COLORS.accent, fontWeight:700, borderBottom:`1px solid ${COLORS.border}` }}>
+                        {period === 'AM' ? amDays : pmDays}
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {bizDays.length > 15 && (
+          <p style={{ color: COLORS.textMuted, fontSize:10, margin:'8px 0 0', textAlign:'center' }}>
+            Showing first 15 of {bizDays.length} business days. Download Excel for full view.
+          </p>
+        )}
+      </Card>
+
+      {/* Client Attendance Summary */}
+      <Card>
+        <h4 style={{ color: COLORS.text, margin:'0 0 12px' }}>Client Attendance Summary — {monthName}</h4>
+        <p style={{ color: COLORS.textDim, fontSize:11, margin:'0 0 8px' }}>
+          Feeds into Daily Attendance Report. Codes: 2=Round Trip, 1=One Way, NS=No Show, 0=Absent
+        </p>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+            <thead>
+              <tr style={{ background: COLORS.bg }}>
+                {['Client','Route','Trips','No Shows','Absent'].map(h => (
+                  <th key={h} style={{ padding:'6px 8px', color: COLORS.text, textAlign:'left', borderBottom:`1px solid ${COLORS.border}`, fontSize:11 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {clientAttendance.map(cl => (
+                <tr key={cl.name} style={{ borderBottom:`1px solid ${COLORS.border}` }}>
+                  <td style={{ padding:'6px 8px', color: COLORS.text }}>{cl.name}</td>
+                  <td style={{ padding:'6px 8px', color: COLORS.textMuted, fontSize:11 }}>{cl.routeName}</td>
+                  <td style={{ padding:'6px 8px', color: cl.trips > 0 ? '#166534' : COLORS.textMuted, fontWeight: cl.trips > 0 ? 700 : 400, textAlign:'center' }}>{cl.trips}</td>
+                  <td style={{ padding:'6px 8px', color: cl.noShows > 0 ? COLORS.red : COLORS.textMuted, textAlign:'center' }}>{cl.noShows || '—'}</td>
+                  <td style={{ padding:'6px 8px', color: cl.absents > 0 ? COLORS.yellow : COLORS.textMuted, textAlign:'center' }}>{cl.absents || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ============ EXCEL EXPORT ENGINE ============
+function buildBizDays(year, month) {
+  const days = [];
+  const d = new Date(year, month - 1, 1);
+  while (d.getMonth() === month - 1) {
+    if (d.getDay() !== 0 && d.getDay() !== 6) days.push(new Date(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return days;
+}
+
+// All calendar days in a month (including weekends)
+function getAllDays(year, month) {
+  const days = [];
+  const d = new Date(year, month - 1, 1);
+  while (d.getMonth() === month - 1) {
+    days.push(new Date(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return days;
+}
+
+function isWeekend(d) { return d.getDay() === 0 || d.getDay() === 6; }
+function dayAbbr(d) { return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]; }
+
+// ── SheetJS cell style helpers ────────────────────────────────────────────────
+function makeStyle(fill, fontBold, fontSz, fontColor, halign, numFmt) {
+  return {
+    fill: fill ? { fgColor: { rgb: fill }, patternType: 'solid' } : { patternType: 'none' },
+    font: { name: 'Arial', sz: fontSz || 9, bold: !!fontBold, color: { rgb: fontColor || '000000' } },
+    alignment: { horizontal: halign || 'center', vertical: 'center', wrapText: true },
+    border: { top:{style:'thin',color:{rgb:'000000'}}, bottom:{style:'thin',color:{rgb:'000000'}},
+              left:{style:'thin',color:{rgb:'000000'}}, right:{style:'thin',color:{rgb:'000000'}} },
+    numFmt: numFmt || '',
+  };
+}
+
+// Pre-built styles
+const ST = {
+  gray:     () => makeStyle('C0C0C0', true,  9,  '000000', 'center'),
+  yellow:   () => makeStyle('FFFF99', false, 9,  '000000', 'center'),
+  blueHdr:  () => makeStyle('00B0F0', true,  9,  'FFFFFF', 'center'),
+  darkBlue: () => makeStyle('1F3864', true,  10, 'FFFFFF', 'center'),
+  orange:   () => makeStyle('F4B942', true,  11, '000000', 'right', '$#,##0.00'),
+  labelL:   () => makeStyle(null,     true,  9,  '000000', 'left'),
+  labelC:   () => makeStyle(null,     true,  9,  '000000', 'center'),
+  dataL:    () => makeStyle(null,     false, 9,  '000000', 'left'),
+  dataC:    () => makeStyle(null,     false, 9,  '000000', 'center'),
+  dayHdr:   (wknd) => makeStyle(wknd ? 'C0C0C0' : 'D9E1F2', true, 8, '000000', 'center'),
+  total:    () => makeStyle(null,     true,  9,  '000000', 'right', '$#,##0.00'),
+  yellowR:  () => makeStyle('FFFF99', true,  9,  '000000', 'right', '$#,##0.00'),
+};
+
+// Apply style to a SheetJS cell
+function sc(cell, style) {
+  if (cell) cell.s = style;
+}
+
+// Encode column letter safely
+function col(n) { return XLSX.utils.encode_col(n); }
+
+// Apply styles to a whole worksheet after building it from AOA
+function styleRouteDetail(ws, allDays, numRoutes, year, month) {
+  const GRAY = 'C0C0C0', YELLOW = 'FFFF99';
+  const dataStartRow = 10; // 1-indexed, row 10 = first route row
+
+  // Header row 9: Route #, Route Segment, day cols, Total
+  const hdrStyle = makeStyle(GRAY, true, 9, '000000', 'center');
+  for (let c = 0; c < allDays.length + 3; c++) {
+    const addr = XLSX.utils.encode_cell({r: 8, c: c}); // row 9 = r:8
+    if (ws[addr]) ws[addr].s = hdrStyle;
+  }
+  // Day abbreviation row 8
+  for (let ci = 0; ci < allDays.length; ci++) {
+    const d = allDays[ci];
+    const addr = XLSX.utils.encode_cell({r: 7, c: 2 + ci}); // row 8 = r:7
+    if (ws[addr]) ws[addr].s = makeStyle(isWeekend(d) ? GRAY : 'D9E1F2', true, 8, '000000', 'center');
+  }
+  // Data rows
+  for (let ri = 0; ri < numRoutes * 2; ri++) {
+    const r = dataStartRow - 1 + ri; // 0-indexed
+    // Label cols A, B
+    const aAddr = XLSX.utils.encode_cell({r, c: 0});
+    const bAddr = XLSX.utils.encode_cell({r, c: 1});
+    if (ws[aAddr]) ws[aAddr].s = makeStyle(null, true, 9, '000000', 'center');
+    if (ws[bAddr]) ws[bAddr].s = makeStyle(null, true, 9, '000000', 'left');
+    // Day cols
+    for (let ci = 0; ci < allDays.length; ci++) {
+      const d = allDays[ci];
+      const addr = XLSX.utils.encode_cell({r, c: 2 + ci});
+      if (ws[addr]) ws[addr].s = makeStyle(isWeekend(d) ? GRAY : YELLOW, false, 9, '000000', 'center');
+    }
+    // Total col
+    const totAddr = XLSX.utils.encode_cell({r, c: 2 + allDays.length});
+    if (ws[totAddr]) ws[totAddr].s = makeStyle(null, true, 9, '000000', 'center');
+  }
+  // Daily total row
+  const dtR = dataStartRow - 1 + numRoutes * 2;
+  for (let c = 0; c <= allDays.length + 2; c++) {
+    const addr = XLSX.utils.encode_cell({r: dtR, c});
+    if (ws[addr]) ws[addr].s = makeStyle(GRAY, true, 9, '000000', 'center');
+  }
+  // Summary rows (just style the value cells)
+  const sr = dtR + 2;
+  const valAddr = XLSX.utils.encode_cell({r: sr+2, c: 1}); // B
+  if (ws[valAddr]) ws[valAddr].s = makeStyle(null, true, 9, '000000', 'right', '#,##0.00');
+  const rateAddr = XLSX.utils.encode_cell({r: sr+3, c: 1});
+  if (ws[rateAddr]) ws[rateAddr].s = makeStyle(YELLOW, true, 9, '000000', 'right', '$#,##0.00');
+  const reimAddr = XLSX.utils.encode_cell({r: sr+4, c: 1});
+  if (ws[reimAddr]) ws[reimAddr].s = makeStyle(null, true, 9, '000000', 'right', '$#,##0.00');
+  const totValCol = 2 + allDays.length;
+  const grandAddr = XLSX.utils.encode_cell({r: sr+7, c: totValCol});
+  if (ws[grandAddr]) ws[grandAddr].s = makeStyle(YELLOW, true, 9, '000000', 'right', '$#,##0.00');
+  const invoiceAddr = XLSX.utils.encode_cell({r: sr+8, c: totValCol});
+  if (ws[invoiceAddr]) ws[invoiceAddr].s = makeStyle('F4B942', true, 11, '000000', 'right', '$#,##0.00');
+}
+
+function styleAttendance(ws, allDays, numClients) {
+  const GRAY = 'C0C0C0', YELLOW = 'FFFF99', BLUE = '00B0F0';
+  const HDR_ROW = 11; // 0-indexed row 11 = row 12 in sheet
+  // Header row
+  for (let c = 0; c < 6 + allDays.length + 4; c++) {
+    const addr = XLSX.utils.encode_cell({r: HDR_ROW, c});
+    if (ws[addr]) ws[addr].s = makeStyle(BLUE, true, 9, 'FFFFFF', 'center');
+  }
+  // Title row
+  const titleAddr = XLSX.utils.encode_cell({r: 0, c: 0});
+  if (ws[titleAddr]) ws[titleAddr].s = makeStyle('1F3864', true, 12, 'FFFFFF', 'center');
+  // Data rows
+  for (let ri = 0; ri < numClients; ri++) {
+    const r = HDR_ROW + 1 + ri;
+    // Fixed info cols
+    for (let c = 0; c < 6; c++) {
+      const addr = XLSX.utils.encode_cell({r, c});
+      if (ws[addr]) ws[addr].s = makeStyle(null, c >= 4 ? true : false, 9, '000000', c <= 1 ? 'left' : 'center');
+    }
+    // Day cols
+    for (let ci = 0; ci < allDays.length; ci++) {
+      const d = allDays[ci];
+      const addr = XLSX.utils.encode_cell({r, c: 6 + ci});
+      if (ws[addr]) ws[addr].s = makeStyle(isWeekend(d) ? GRAY : YELLOW, false, 9, '000000', 'center');
+    }
+    // Summary cols
+    for (let c = 0; c < 4; c++) {
+      const addr = XLSX.utils.encode_cell({r, c: 6 + allDays.length + c});
+      if (ws[addr]) ws[addr].s = makeStyle(null, false, 9, '000000', 'center');
+    }
+  }
+}
+
+// ── MAIN KTS TRACKER GENERATOR ────────────────────────────────────────────────
+function generateKTSTrackerBlob(logs, routes, monthYear) {
+  if (typeof XLSX === 'undefined') { alert('Excel library not loaded. Check your internet connection.'); return null; }
+  const [year, month] = monthYear.split('-').map(Number);
+  const allDays = getAllDays(year, month);
+  const bizDays = buildBizDays(year, month);
+  const wb = XLSX.utils.book_new();
+  const startDate = new Date(year, month-1, 1).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'});
+  const monthLabel = new Date(year, month-1, 1).toLocaleString('en-US',{month:'long',year:'numeric'});
+
+  // ── SHEET 1: Route Detail ──────────────────────────────────────────────────
+  const rdData = [
+    ['Khan Transportation - HA0935'],
+    [startDate, '', '', 'Enter Format (Month/1/Year) ie: 6/1/12'],
+    ['*Please fill in only the cells highlighted in yellow. The non-highlighted cells contain formulas to estimate totals based on contractual rates.'],
+    [],
+    ['875 Service Code:'],
+    ['SS0 Vehicle Service Miles Breakdown (AM&PM)'],
+    [],
+    [' ', ' ', ...allDays.map(d => dayAbbr(d)), 'Total'],    // day abbr row
+    ['Route #', 'Route Segment', ...allDays.map(d => d.getDate()), 'Total'],  // date number row
+  ];
+
+  const segRows = [];
+  routes.forEach((route, rIdx) => {
+    ['AM','PM'].forEach(period => {
+      const row = [rIdx === 0 && period === 'AM' ? `Khan${rIdx+1}` : rIdx > 0 && period === 'AM' ? `Khan${rIdx+1}` : '', `${period} Segment`];
+      allDays.forEach(day => {
+        if (isWeekend(day)) { row.push(''); return; }
+        const dateStr = day.toISOString().slice(0,10);
+        const submitted = logs.some(l => (l.routeId===route.id||l.routeName===route.name) && l.date===dateStr && l.period===period);
+        row.push(submitted ? 1 : '');
+      });
+      const rowIdx = rdData.length + 1;
+      const wdayCols = allDays.map((d,ci) => isWeekend(d) ? null : col(2+ci)).filter(Boolean);
+      row.push(wdayCols.length ? {f:`SUM(${wdayCols.map(c=>`${c}${rowIdx}`).join(',')})`} : 0);
+      segRows.push(rdData.length + 1);
+      rdData.push(row);
+    });
+  });
+
+  // Daily total row
+  const dtRowIdx = rdData.length + 1;
+  const dtRow = ['Daily Total', ''];
+  allDays.forEach((d, ci) => {
+    if (isWeekend(d)) { dtRow.push(''); return; }
+    const colL = col(2+ci);
+    dtRow.push({f: segRows.map(r=>`${colL}${r}`).join('+')});
+  });
+  const totalColL = col(2 + allDays.length);
+  dtRow.push({f:`SUM(C${dtRowIdx}:${col(1+allDays.length)}${dtRowIdx})`});
+  rdData.push(dtRow);
+
+  rdData.push([]);
+  rdData.push(['Vehicle Service Mile Estimate']);
+  rdData.push([]);
+  const rateRow = rdData.length + 2;
+  rdData.push(['', {f:`${totalColL}${dtRowIdx}`}, '', 'Total Vehicle Service Miles (total of all routes)']);
+  rdData.push(['', 3.42, '', 'Contract Vehicle Service Mile Rate ($3.42/mile)']);
+  rdData.push(['', {f:`B${rateRow-1}*B${rateRow}`}, '', 'Total Vehicle Service Mile Reimbursement']);
+  rdData.push([]);
+  rdData.push(['Total SS0 Vehicle Service Miles Reimbursement', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', {f:`B${rateRow+1}`}]);
+  rdData.push(['Invoice Grand Total', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', {f:`B${rateRow+1}`}]);
+
+  const wsRD = XLSX.utils.aoa_to_sheet(rdData);
+  styleRouteDetail(wsRD, allDays, routes.length, year, month);
+  wsRD['!cols'] = [{wch:12},{wch:14},...allDays.map(()=>({wch:5.5})),{wch:10}];
+  XLSX.utils.book_append_sheet(wb, wsRD, 'Route Detail');
+
+  // ── SHEET 2: Daily Attendance Report ──────────────────────────────────────
+  const allClients = [];
+  const seen = new Set();
+  routes.forEach(route => {
+    (route.clients||[]).forEach(cl => {
+      if (!seen.has(cl.name)) {
+        const parts = cl.name.split(', ');
+        allClients.push({...cl, lastName: parts[0]||cl.name, firstName: parts[1]||'', routeName: route.name, routeId: route.id, vehicleId: route.vehicleId||route.name});
+        seen.add(cl.name);
+      }
+    });
+  });
+  allClients.sort((a,b)=>a.lastName.localeCompare(b.lastName));
+
+  const arData = [
+    ['Khan Transportation - HA0935 - 875'],
+    [startDate],
+    ['*Purpose: Log daily trips provided to each rider.'],
+    ['*Instructions: Track attendance as follows:'],
+    ['','','','','','','0 = Absent','','Reported by home'],
+    ['','','','','','','1 = One Way'],
+    ['','','','','','','2 = Round Trip'],
+    ['','','','','','','NS = No Show','','No Contact/Notice'],
+    ['','','','','','','C = Cancellation','','Cancelled at the door'],
+    ['','','','','','','X = Vendor Cancellation','','Vendor Cancelled'],
+    [],
+    ['Daily Attendance Report'],
+    ['#','First Name','Last Name','UCI','Route / Vehicle ID','Service Days',
+     ...allDays.map(d => d.getDate()), 'Total Trips','No Shows','Cancellations','Vendor CXL'],
+  ];
+
+  allClients.forEach((cl, idx) => {
+    const row = [idx+1, cl.firstName, cl.lastName, cl.uci||'', cl.vehicleId||cl.routeName, ''];
+    allDays.forEach(day => {
+      if (isWeekend(day)) { row.push(''); return; }
+      const dateStr = day.toISOString().slice(0,10);
+      const dayLogs = logs.filter(l=>l.date===dateStr&&(l.routeId===cl.routeId||l.routeName===cl.routeName));
+      let code = '';
+      if (dayLogs.length > 0) {
+        const amLog = dayLogs.find(l=>l.period==='AM');
+        const pmLog = dayLogs.find(l=>l.period==='PM');
+        const amP = amLog?.clientStatuses?.[cl.name]==='present';
+        const pmP = pmLog?.clientStatuses?.[cl.name]==='present';
+        const ns = amLog?.clientStatuses?.[cl.name]==='noshow'||pmLog?.clientStatuses?.[cl.name]==='noshow';
+        const c2 = amLog?.clientStatuses?.[cl.name]==='cancelled'||pmLog?.clientStatuses?.[cl.name]==='cancelled';
+        if (amP&&pmP) code=2; else if (amP||pmP) code=1; else if (ns) code='NS'; else if (c2) code='C'; else code=0;
+      }
+      row.push(code);
+    });
+    const r = arData.length + 1;
+    const wdCols = allDays.map((d,ci)=>isWeekend(d)?null:col(6+ci)).filter(Boolean);
+    const rng = wdCols.length ? `${wdCols[0]}${r}:${wdCols[wdCols.length-1]}${r}` : null;
+    row.push(rng ? {f:`SUMPRODUCT((${rng}=2)*2+(${rng}=1)*1)`} : 0);
+    row.push(rng ? {f:`COUNTIF(${rng},"NS")`} : 0);
+    row.push(rng ? {f:`COUNTIF(${rng},"C")`} : 0);
+    row.push(rng ? {f:`COUNTIF(${rng},"X")`} : 0);
+    arData.push(row);
+  });
+
+  const wsAR = XLSX.utils.aoa_to_sheet(arData);
+  styleAttendance(wsAR, allDays, allClients.length);
+  wsAR['!cols'] = [{wch:4},{wch:16},{wch:16},{wch:10},{wch:16},{wch:9},...allDays.map(()=>({wch:5.5})),{wch:12},{wch:10},{wch:14},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, wsAR, 'Daily Attendance Report');
+
+  // ── SHEET 3: Route Mileage ─────────────────────────────────────────────────
+  const rmData = [
+    ['Route Mileage Log — ' + monthLabel],
+    [],
+    ['Route','Driver',...allDays.flatMap(d=>[d.toLocaleDateString('en-US'),'','']),'Monthly Total'],
+    [''     ,''      ,...allDays.flatMap(()=>['AM Miles','PM Miles','Day Total']),''],
+  ];
+  routes.forEach(route => {
+    const row = [route.name, route.driver||''];
+    allDays.forEach(day => {
+      if (isWeekend(day)) { row.push('','',''); return; }
+      const dateStr = day.toISOString().slice(0,10);
+      const amLog = logs.find(l=>l.date===dateStr&&l.routeId===route.id&&l.period==='AM');
+      const pmLog = logs.find(l=>l.date===dateStr&&l.routeId===route.id&&l.period==='PM');
+      row.push(amLog?(parseFloat(amLog.totalMiles)||''):'', pmLog?(parseFloat(pmLog.totalMiles)||''):'', '');
+    });
+    row.push('');
+    rmData.push(row);
+  });
+  const wsRM = XLSX.utils.aoa_to_sheet(rmData);
+  // Style Route Mileage
+  const rmHdr = makeStyle('C0C0C0', true, 9, '000000', 'center');
+  ['A3','B3'].forEach(a => { if(wsRM[a]) wsRM[a].s = rmHdr; });
+  allDays.forEach((d,ci) => {
+    ['A','B','C'].map((_,j) => {
+      const base = 2 + ci*3 + j;
+      const addr = XLSX.utils.encode_cell({r:2,c:base+2});
+      if(wsRM[addr]) wsRM[addr].s = makeStyle(isWeekend(d)?'C0C0C0':'D9E1F2',true,8,'000000','center');
+    });
+  });
+  wsRM['!cols'] = [{wch:10},{wch:12},...allDays.flatMap(()=>[{wch:9},{wch:9},{wch:9}]),{wch:14}];
+  XLSX.utils.book_append_sheet(wb, wsRM, 'Route Mileage');
+
+  // ── SHEET 4: Daily Total ───────────────────────────────────────────────────
+  const dtData = [
+    ['Daily Total Miles — ' + monthLabel],
+    [],
+    ['#','Client','Route',...allDays.map(d=>d.toLocaleDateString('en-US')),'Monthly Total'],
+  ];
+  allClients.forEach((cl,idx) => {
+    const row = [idx+1, cl.name, cl.routeName||''];
+    allDays.forEach(day => {
+      if (isWeekend(day)) { row.push(''); return; }
+      const dateStr = day.toISOString().slice(0,10);
+      const dayLogs = logs.filter(l=>l.date===dateStr&&l.routeId===cl.routeId);
+      let miles = '';
+      dayLogs.forEach(l=>{ if(l.clientMiles?.[cl.name]) miles=(miles||0)+parseFloat(l.clientMiles[cl.name]); });
+      row.push(miles);
+    });
+    row.push('');
+    dtData.push(row);
+  });
+  const wsDT = XLSX.utils.aoa_to_sheet(dtData);
+  // Style headers
+  for (let c = 0; c < 3 + allDays.length + 1; c++) {
+    const addr = XLSX.utils.encode_cell({r:2,c});
+    if(wsDT[addr]) wsDT[addr].s = makeStyle('C0C0C0',true,9,'000000','center');
+  }
+  allClients.forEach((_,ri) => {
+    allDays.forEach((d,ci) => {
+      const addr = XLSX.utils.encode_cell({r:3+ri,c:3+ci});
+      if(wsDT[addr]) wsDT[addr].s = makeStyle(isWeekend(d)?'C0C0C0':'FFFF99',false,9,'000000','center');
+    });
+  });
+  wsDT['!cols'] = [{wch:4},{wch:26},{wch:12},...allDays.map(()=>({wch:7})),{wch:14}];
+  XLSX.utils.book_append_sheet(wb, wsDT, 'Daily Total');
+
+  // ── SHEET 5: Client Tracker ────────────────────────────────────────────────
+  const ctData = [['Client Tracker — ' + monthLabel],[],];
+  routes.forEach(route => {
+    ctData.push([route.name + ' — Driver: ' + (route.driver||''), '', '', ...allDays.flatMap(d=>[d.toLocaleDateString('en-US'),'',''])]);
+    ctData.push(['#','Client','UCI',...allDays.flatMap(()=>['AM','PM','Total']),'Monthly Total']);
+    (route.clients||[]).forEach((cl,ci2) => {
+      const row = [ci2+1, cl.name, cl.uci||''];
+      allDays.forEach(day => {
+        if(isWeekend(day)){row.push('','','');return;}
+        const dateStr = day.toISOString().slice(0,10);
+        const amL = logs.find(l=>l.date===dateStr&&l.routeId===route.id&&l.period==='AM');
+        const pmL = logs.find(l=>l.date===dateStr&&l.routeId===route.id&&l.period==='PM');
+        row.push(amL?.clientMiles?.[cl.name]||'', pmL?.clientMiles?.[cl.name]||'', '');
+      });
+      row.push('');
+      ctData.push(row);
+    });
+    ctData.push([]);
+  });
+  const wsCT = XLSX.utils.aoa_to_sheet(ctData);
+  wsCT['!cols'] = [{wch:4},{wch:26},{wch:10},...allDays.flatMap(()=>[{wch:8},{wch:8},{wch:9}]),{wch:14}];
+  XLSX.utils.book_append_sheet(wb, wsCT, 'Client Tracker');
+
+  const wbout = XLSX.write(wb, {bookType:'xlsx', type:'array', cellStyles:true});
+  return new Blob([wbout], {type:'application/octet-stream'});
+}
+
+function generatePriorityTrackerBlob(logs, monthYear) {
+  if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return null; }
+  const [year, month] = monthYear.split('-').map(Number);
+  const allDays = getAllDays(year, month);
+  const wb = XLSX.utils.book_new();
+  const startDate = new Date(year,month-1,1).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'2-digit'});
+
+  // Route Detail
+  const rdData = [
+    ['Priority Transportation HV0713'],
+    [startDate,'','','Enter Format (Month/1/Year) ie: 6/1/12'],
+    ['*Please fill in only the cells highlighted in yellow.'],
+    [],['875 Service Code:'],['Vehicle Rate: 0V0'],[],
+    [' ',' ',...allDays.map(d=>dayAbbr(d)),'Total'],
+    ['Route #','Route Segment',...allDays.map(d=>d.getDate()),'Total'],
+  ];
+  const prRoutes = ['6770','6771','6772','6773','6774'];
+  const segRows = [];
+  prRoutes.forEach((rId,ri) => {
+    ['AM Segment','PM Segment'].forEach((seg,si) => {
+      const row = [si===0?rId:'', seg, ...allDays.map(d=>isWeekend(d)?'':''), ''];
+      const rowIdx = rdData.length+1;
+      const wdCols = allDays.map((d,ci)=>isWeekend(d)?null:col(2+ci)).filter(Boolean);
+      if(wdCols.length) row[row.length-1] = {f:`SUM(${wdCols.map(c=>`${c}${rowIdx}`).join(',')})`};
+      segRows.push(rdData.length+1);
+      rdData.push(row);
+    });
+  });
+  const dtR = rdData.length+1;
+  const dtRow = ['Daily Total',''];
+  allDays.forEach((d,ci)=>{ if(isWeekend(d)){dtRow.push('');return;} dtRow.push({f:segRows.map(r=>`${col(2+ci)}${r}`).join('+')}); });
+  dtRow.push({f:`SUM(C${dtR}:${col(1+allDays.length)}${dtR})`});
+  rdData.push(dtRow);
+  rdData.push([]);rdData.push(['Vehicle Rate Estimate']);rdData.push([]);
+  const tl=col(2+allDays.length);
+  rdData.push(['',{f:`${tl}${dtR}`},'','Total Vehicle Units']);
+  rdData.push(['',166.94,'','Vehicle Unit Rate ($166.94)']);
+  rdData.push(['',{f:`B${rdData.length}*B${rdData.length+1}`},'','Total Vehicle Reimbursement']);
+  const wsRD = XLSX.utils.aoa_to_sheet(rdData);
+  styleRouteDetail(wsRD, allDays, prRoutes.length, year, month);
+  wsRD['!cols']=[{wch:12},{wch:14},...allDays.map(()=>({wch:5.5})),{wch:10}];
+  XLSX.utils.book_append_sheet(wb, wsRD, 'Route Detail');
+
+  // Daily Attendance Report (blank template)
+  const arData2=[['Priority Transportation HV0713 - 875'],[startDate],
+    ['*Purpose: Log daily trips.'],['*Instructions:'],
+    ['','','','','','','0 = Absent','','Reported by home'],
+    ['','','','','','','1 = One Way'],['','','','','','','2 = Round Trip'],
+    ['','','','','','','NS = No Show','','No Contact/Notice'],
+    ['','','','','','','C = Cancellation','','Cancelled at the door'],
+    ['','','','','','','X = Vendor Cancellation','','Vendor Cancelled'],
+    [],['Daily Attendance Report'],
+    ['#','First Name','Last Name','UCI','Route / Vehicle ID','Service Days',
+     ...allDays.map(d=>d.getDate()),'Total Trips','No Shows','Cancellations','Vendor CXL'],
+  ];
+  for(let i=0;i<30;i++){
+    const r=arData2.length+1;
+    const wdCols=allDays.map((d,ci)=>isWeekend(d)?null:col(6+ci)).filter(Boolean);
+    const rng=wdCols.length?`${wdCols[0]}${r}:${wdCols[wdCols.length-1]}${r}`:null;
+    arData2.push([i+1,'','','','','',
+      ...allDays.map(d=>isWeekend(d)?'':''),
+      rng?{f:`SUMPRODUCT((${rng}=2)*2+(${rng}=1)*1)`}:0,
+      rng?{f:`COUNTIF(${rng},"NS")`}:0,
+      rng?{f:`COUNTIF(${rng},"C")`}:0,
+      rng?{f:`COUNTIF(${rng},"X")`}:0,
+    ]);
+  }
+  const wsAR2=XLSX.utils.aoa_to_sheet(arData2);
+  styleAttendance(wsAR2, allDays, 30);
+  wsAR2['!cols']=[{wch:4},{wch:16},{wch:16},{wch:10},{wch:14},{wch:9},...allDays.map(()=>({wch:5.5})),{wch:12},{wch:10},{wch:14},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, wsAR2, 'Daily Attendance Report');
+
+  const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array',cellStyles:true});
+  return new Blob([wbout],{type:'application/octet-stream'});
+}
+
+// HA0935 and HV0713 now just delegate to the full generators above
+function generateHA0935Blob(logs, routes, monthYear) {
+  return generateKTSTrackerBlob(logs, routes, monthYear);
+}
+function generateHV0713Blob(logs, monthYear) {
+  return generatePriorityTrackerBlob(logs, monthYear);
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+}
+
 // ============ MAIN APP ============
 function App() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [routes, setRoutes] = useState(ROUTES_DEFAULT);
-  const [users, setUsers] = useState(USERS_DEFAULT);
-  const [logs, setLogs] = useState([]);
-  const [inspections, setInspections] = useState([]);
-  const [appMode, setAppMode] = useState("dashboard"); // "dashboard" or "field"
+  const [routes, setRoutes] = useState(() => {
+    try { const s = localStorage.getItem('kts_routes'); return s ? JSON.parse(s) : ROUTES_DEFAULT; } catch(e) { return ROUTES_DEFAULT; }
+  });
+  const [users, setUsers] = useState(() => {
+    try { const s = localStorage.getItem('kts_users'); return s ? JSON.parse(s) : USERS_DEFAULT; } catch(e) { return USERS_DEFAULT; }
+  });
+  const [logs, setLogs] = useState(() => {
+    try { const s = localStorage.getItem('kts_logs'); return s ? JSON.parse(s) : []; } catch(e) { return []; }
+  });
+  const [inspections, setInspections] = useState(() => {
+    try { const s = localStorage.getItem('kts_inspections'); return s ? JSON.parse(s) : []; } catch(e) { return []; }
+  });
+  const [appMode, setAppMode] = useState("dashboard");
+
+  // Password change state
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' });
+  const [pwError, setPwError] = useState('');
+  const [pwSuccess, setPwSuccess] = useState(false);
+
+  // Persist to localStorage
+  useEffect(() => { try { localStorage.setItem('kts_routes', JSON.stringify(routes)); } catch(e) {} }, [routes]);
+  useEffect(() => { try { localStorage.setItem('kts_users', JSON.stringify(users)); } catch(e) {} }, [users]);
+  useEffect(() => { try { localStorage.setItem('kts_logs', JSON.stringify(logs)); } catch(e) {} }, [logs]);
+  useEffect(() => { try { localStorage.setItem('kts_inspections', JSON.stringify(inspections)); } catch(e) {} }, [inspections]);
+
+  // Auto-download previous month when a new month starts
+  useEffect(() => {
+    if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'manager')) return;
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    try {
+      const lastAutoDownload = localStorage.getItem('kts_last_auto_download');
+      if (lastAutoDownload && lastAutoDownload !== currentMonthKey) {
+        const prevMonthLogs = logs.filter(l => l.date && l.date.startsWith(lastAutoDownload));
+        if (prevMonthLogs.length > 0) {
+          const [py, pm] = lastAutoDownload.split('-').map(Number);
+          const monthName = new Date(py, pm-1, 1).toLocaleString('en-US',{month:'long',year:'numeric'});
+          setTimeout(() => {
+            if (window.confirm(`📅 New month detected! Auto-download ${monthName} reports now?`)) {
+              const ktsBlob = generateKTSTrackerBlob(prevMonthLogs, routes, lastAutoDownload);
+              if (ktsBlob) downloadBlob(ktsBlob, `KTS_Client_Tracker_${monthName.replace(' ','_')}.xlsx`);
+              const ptBlob = generatePriorityTrackerBlob(prevMonthLogs, lastAutoDownload);
+              if (ptBlob) downloadBlob(ptBlob, `Priority_Transportation_${monthName.replace(' ','_')}.xlsx`);
+            }
+          }, 1500);
+        }
+      }
+      localStorage.setItem('kts_last_auto_download', currentMonthKey);
+    } catch(e) {}
+  }, [currentUser]);
 
   const handleLogin = (user) => {
     setCurrentUser(user);
     setAppMode(user.role === "driver" ? "field" : "dashboard");
   };
   const handleLogout = () => { setCurrentUser(null); setAppMode("dashboard"); };
-  const handleLogSubmit = (data) => setLogs(prev => [...prev, data]);
+  const handleLogSubmit = (data) => {
+    setLogs(prev => [...prev, { ...data, date: data.date || new Date().toISOString().slice(0,10), submittedAt: new Date().toISOString() }]);
+  };
   const handleInspectionComplete = (data) => setInspections(prev => [...prev, data]);
+
+  const handleChangePassword = () => {
+    setPwError('');
+    setPwSuccess(false);
+    if (!pwForm.current || !pwForm.newPw || !pwForm.confirm) { setPwError('All fields are required.'); return; }
+    const userRecord = users.find(u => u.id === currentUser.id);
+    if (!userRecord || userRecord.password !== pwForm.current) { setPwError('Current password is incorrect.'); return; }
+    if (pwForm.newPw.length < 6) { setPwError('New password must be at least 6 characters.'); return; }
+    if (pwForm.newPw !== pwForm.confirm) { setPwError('New passwords do not match.'); return; }
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, password: pwForm.newPw } : u));
+    setPwSuccess(true);
+    setPwForm({ current: '', newPw: '', confirm: '' });
+    setTimeout(() => { setShowChangePw(false); setPwSuccess(false); }, 1500);
+  };
 
   if (!currentUser) return <LoginScreen onLogin={handleLogin} users={users} />;
 
   const isAdminOrMgr = currentUser.role === "admin" || currentUser.role === "manager";
 
-  // Bottom nav with mode switcher for admin/manager
+  // Password change modal — available to everyone
+  const ChangePasswordModal = () => (
+    <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.5)", zIndex:500,
+      display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+      <Card style={{ width:"100%", maxWidth:380 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+          <h3 style={{ color: COLORS.text, margin:0 }}>🔑 Change Password</h3>
+          <button onClick={() => { setShowChangePw(false); setPwForm({current:'',newPw:'',confirm:''}); setPwError(''); setPwSuccess(false); }}
+            style={{ background:"none", border:"none", color: COLORS.textMuted, fontSize:20, cursor:"pointer", lineHeight:1 }}>✕</button>
+        </div>
+        <p style={{ color: COLORS.textDim, fontSize:12, margin:"0 0 14px" }}>Logged in as: <strong>{currentUser.name}</strong> (@{currentUser.username})</p>
+        {pwSuccess ? (
+          <div style={{ textAlign:"center", padding:"20px 0" }}>
+            <p style={{ fontSize:32, margin:"0 0 8px" }}>✅</p>
+            <p style={{ color:"#166534", fontWeight:700, fontSize:15, margin:0 }}>Password updated!</p>
+          </div>
+        ) : (
+          <>
+            <Input label="Current Password *" type="password" value={pwForm.current}
+              onChange={e => setPwForm(p=>({...p,current:e.target.value}))} placeholder="Enter current password" />
+            <Input label="New Password *" type="password" value={pwForm.newPw}
+              onChange={e => setPwForm(p=>({...p,newPw:e.target.value}))} placeholder="At least 6 characters" />
+            <Input label="Confirm New Password *" type="password" value={pwForm.confirm}
+              onChange={e => setPwForm(p=>({...p,confirm:e.target.value}))} placeholder="Repeat new password" />
+            {pwError && <p style={{ color: COLORS.red, fontSize:12, margin:"0 0 10px", background:"#fff0f0", padding:"8px 10px", borderRadius:6 }}>{pwError}</p>}
+            <Btn onClick={handleChangePassword} style={{ width:"100%" }}>Update Password</Btn>
+          </>
+        )}
+      </Card>
+    </div>
+  );
+
+  // Bottom nav
   const BottomNav = () => (
     <div style={{
       position: "fixed", bottom: 0, left: 0, right: 0, background: COLORS.card,
-      borderTop: `1px solid ${COLORS.border}`, padding: "6px 16px", display: "flex",
+      borderTop: `1px solid ${COLORS.border}`, padding: "6px 12px", display: "flex",
       justifyContent: "space-around", zIndex: 100, boxShadow: "0 -2px 8px rgba(0,0,0,0.06)",
     }}>
       {isAdminOrMgr && (
         <button onClick={() => setAppMode("dashboard")} style={{
-          background: "none", border: "none", color: appMode === "dashboard" ? COLORS.accent : COLORS.textMuted, fontSize: 11, cursor: "pointer",
-          display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontWeight: appMode === "dashboard" ? 700 : 400,
+          background: "none", border: "none", color: appMode === "dashboard" ? COLORS.accent : COLORS.textMuted,
+          fontSize: 11, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+          fontWeight: appMode === "dashboard" ? 700 : 400,
         }}>
           <span style={{ fontSize: 18 }}>📊</span>Dashboard
         </button>
       )}
       {isAdminOrMgr && (
         <button onClick={() => setAppMode("field")} style={{
-          background: "none", border: "none", color: appMode === "field" ? COLORS.accent : COLORS.textMuted, fontSize: 11, cursor: "pointer",
-          display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontWeight: appMode === "field" ? 700 : 400,
+          background: "none", border: "none", color: appMode === "field" ? COLORS.accent : COLORS.textMuted,
+          fontSize: 11, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+          fontWeight: appMode === "field" ? 700 : 400,
         }}>
           <span style={{ fontSize: 18 }}>🚐</span>Field Mode
         </button>
       )}
+      <button onClick={() => { setShowChangePw(true); setPwForm({current:'',newPw:'',confirm:''}); setPwError(''); }} style={{
+        background: "none", border: "none", color: COLORS.textMuted, fontSize: 11, cursor: "pointer",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+      }}>
+        <span style={{ fontSize: 18 }}>🔑</span>Password
+      </button>
       <button onClick={handleLogout} style={{
         background: "none", border: "none", color: COLORS.textMuted, fontSize: 11, cursor: "pointer",
         display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
@@ -1961,17 +3295,16 @@ function App() {
     </div>
   );
 
-  // Driver only — field mode
   if (currentUser.role === "driver") {
     return (
       <>
         <DriverDashboard user={currentUser} routes={routes} onSubmit={handleLogSubmit} onInspectionComplete={handleInspectionComplete} />
         <BottomNav />
+        {showChangePw && <ChangePasswordModal />}
       </>
     );
   }
 
-  // Admin / Manager — switch between dashboard and field
   return (
     <>
       {appMode === "dashboard" ? (
@@ -1980,26 +3313,41 @@ function App() {
         <DriverDashboard user={currentUser} routes={routes} onSubmit={handleLogSubmit} onInspectionComplete={handleInspectionComplete} />
       )}
       <BottomNav />
+      {showChangePw && <ChangePasswordModal />}
     </>
   );
 }
 
-
-    try {
-      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
-      document.getElementById('loading').classList.add('hidden');
-    } catch(err) {
-      document.getElementById('loading').innerHTML = '<p style="color:red;padding:20px">Error: ' + err.message + '</p>';
-    }
+try {
+  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  document.getElementById('loading').classList.add('hidden');
+} catch(err) {
+  document.getElementById('loading').innerHTML = '<p style="color:red;padding:20px">Error: ' + err.message + '</p>';
+}
   </script>
   <script>
-    // Hide loading after Babel finishes (fallback timer)
-    setTimeout(function() {
-      var el = document.getElementById('loading');
-      if (el && !el.classList.contains('hidden')) {
-        el.classList.add('hidden');
+    // Wait for Babel to be ready, then compile and run the app source
+    function runApp() {
+      try {
+        var src = document.getElementById('app-source').textContent;
+        var compiled = Babel.transform(src, { presets: ['react'] }).code;
+        var script = document.createElement('script');
+        script.textContent = compiled;
+        document.body.appendChild(script);
+      } catch(e) {
+        document.getElementById('loading').innerHTML = '<p style="color:red;padding:20px">Compile error: ' + e.message + '</p>';
       }
-    }, 8000);
+    }
+    function waitForBabel(attempts) {
+      if (typeof Babel !== 'undefined' && typeof React !== 'undefined' && typeof ReactDOM !== 'undefined') {
+        runApp();
+      } else if (attempts > 0) {
+        setTimeout(function() { waitForBabel(attempts - 1); }, 200);
+      } else {
+        document.getElementById('loading').innerHTML = '<p style="color:red;padding:20px;text-align:center">Failed to load required libraries. Check your internet connection and refresh.</p>';
+      }
+    }
+    waitForBabel(50); // try for up to 10 seconds
   </script>
 </body>
 </html>
