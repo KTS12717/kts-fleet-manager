@@ -61,16 +61,17 @@
 const BASE_ADDRESS = "10375 Live Oak Ave., Galt CA 95632";
 
 const USERS_DEFAULT = [
-  { id: "admin1", username: "admin", password: "admin123", role: "admin", name: "Hanif Khan" },
-  { id: "mgr1", username: "manager", password: "manager123", role: "manager", name: "Fleet Manager" },
-  { id: "mgr2", username: "betty", password: "manager123", role: "manager", name: "Betty Manning" },
-  { id: "mgr3", username: "victoria", password: "manager123", role: "manager", name: "Victoria Gomez" },
-  { id: "drv1", username: "patrick", password: "driver123", role: "driver", name: "Patrick" },
-  { id: "drv2", username: "laura", password: "driver123", role: "driver", name: "Laura" },
-  { id: "drv3", username: "dyllon", password: "driver123", role: "driver", name: "Dyllon" },
-  { id: "drv4", username: "nizam", password: "driver123", role: "driver", name: "Nizam" },
-  { id: "drv5", username: "brandin", password: "driver123", role: "driver", name: "Brandin" },
-  { id: "drv6", username: "hanif", password: "driver123", role: "driver", name: "Hanif" },
+  { id: "admin1",  username: "admin",    password: "admin123",    role: "admin",           name: "Hanif Khan" },
+  { id: "asst1",   username: "assistant", password: "assistant123", role: "admin_assistant", name: "Admin Assistant" },
+  { id: "mgr1",    username: "manager",  password: "manager123",  role: "manager",         name: "Fleet Manager" },
+  { id: "mgr2",    username: "betty",    password: "manager123",  role: "manager",         name: "Betty Manning" },
+  { id: "mgr3",    username: "victoria", password: "manager123",  role: "manager",         name: "Victoria Gomez" },
+  { id: "drv1",    username: "patrick",  password: "driver123",   role: "driver",          name: "Patrick" },
+  { id: "drv2",    username: "laura",    password: "driver123",   role: "driver",          name: "Laura" },
+  { id: "drv3",    username: "dyllon",   password: "driver123",   role: "driver",          name: "Dyllon" },
+  { id: "drv4",    username: "nizam",    password: "driver123",   role: "driver",          name: "Nizam" },
+  { id: "drv5",    username: "brandin",  password: "driver123",   role: "driver",          name: "Brandin" },
+  { id: "drv6",    username: "hanif",    password: "driver123",   role: "driver",          name: "Hanif" },
 ];
 
 const ROUTES_DEFAULT = [
@@ -1229,22 +1230,29 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
   const [archiveDone, setArchiveDone] = useState(null);       // { name, affectedRoutes }
 
   // Driver reassignment
-  const allDriversAndManagers = users.filter(u => u.role === "driver" || u.role === "manager" || u.role === "admin");
+  const allDriversAndManagers = users.filter(u => ["driver","manager","admin","admin_assistant"].includes(u.role));
   const handleReassignDriver = (routeId, newDriverName) => {
     if (!confirm(`Reassign this route to ${newDriverName}?`)) return;
     setRoutes(prev => prev.map(r => r.id === routeId ? { ...r, driver: newDriverName } : r));
   };
 
+  // Role flags
+  const isAdmin     = user.role === 'admin';                                                    // sees $ amounts
+  const isAdminAsst = user.role === 'admin_assistant';                                          // full access, no $
+  const isManager   = user.role === 'manager';                                                  // reports + routes, no $
+  const isFullAccess = isAdmin || isAdminAsst || isManager;                                     // dashboard + reports tab
+
   const tabs = [
-    { id: "routes", label: "Routes", icon: "🗺️" },
-    { id: "clients", label: "Clients", icon: "👥" },
-    { id: "participants", label: "Participants", icon: "📋" },
-    { id: "schedule", label: "Schedule", icon: "📅" },
-    { id: "mileage", label: "Mileage", icon: "📊" },
-    { id: "logs", label: "Logs", icon: "📋" },
-    { id: "inspect", label: "Inspections", icon: "🔍" },
-    { id: "users", label: "Users", icon: "🔑" },
-    { id: "reports", label: "Reports", icon: "📥" },
+    { id: "routes",       label: "Routes",       icon: "🗺️" },
+    { id: "clients",      label: "Clients",       icon: "👥" },
+    { id: "participants", label: "Participants",   icon: "📋" },
+    { id: "schedule",     label: "Schedule",       icon: "📅" },
+    { id: "mileage",      label: "Mileage",        icon: "📊" },
+    { id: "logs",         label: "Logs",           icon: "📋" },
+    { id: "inspect",      label: "Inspections",    icon: "🔍" },
+    { id: "users",        label: "Users",          icon: "🔑" },
+    // Reports tab — admin and admin assistant only (no managers/drivers)
+    ...(isFullAccess ? [{ id: "reports", label: "Reports", icon: "📥" }] : []),
   ];
 
   // When toggling client OFF → show modal; when toggling ON → just activate
@@ -1440,7 +1448,19 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
           <div>
             <h1 style={{ color: COLORS.text, margin: 0, fontSize: 22, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}><KTSLogoSmall /> KTS Dashboard</h1>
             <p style={{ color: COLORS.textDim, fontSize: 12, margin: "2px 0 0" }}>
-              {user.name} · <Badge color={user.role === "admin" ? COLORS.red : COLORS.yellow}>{user.role}</Badge>
+              {user.name} · <Badge color={
+                user.role === "admin" ? COLORS.red :
+                user.role === "admin_assistant" ? "#7c3aed" :
+                COLORS.yellow
+              }>{
+                user.role === "admin" ? "System Admin" :
+                user.role === "admin_assistant" ? "Admin Assistant" :
+                "Manager"
+              }</Badge>
+              {isAdmin      && <span style={{ color: COLORS.accent, fontSize:10, marginLeft:6, fontWeight:600 }}>· Full Access + Financials</span>}
+              {isAdminAsst  && <span style={{ color:"#7c3aed", fontSize:10, marginLeft:6, fontWeight:600 }}>· Full Access</span>}
+              {isManager    && <span style={{ color: COLORS.textMuted, fontSize:10, marginLeft:6 }}>· Route & Report Management</span>}
+              {!isAdmin && !isAdminAsst && !isManager && <span style={{ color: COLORS.textMuted, fontSize:10, marginLeft:6 }}>· Field Access</span>}
             </p>
           </div>
           <div style={{ textAlign: "right" }}>
@@ -2150,20 +2170,28 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
             <div>
               <h3 style={{ color: COLORS.text, margin: "0 0 12px" }}>Mileage Breakdown</h3>
               <Card style={{ marginBottom: 12 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, textAlign: "center" }}>
+                <div style={{ display: "grid", gridTemplateColumns: isAdmin ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr", gap: 8, textAlign: "center" }}>
                   <div><p style={{ color: COLORS.accent, fontSize: 20, fontWeight: 800, margin: 0 }}>
-                    {routes.reduce((s, r) => s + r.amMiles, 0).toFixed(1)}</p><p style={{ color: COLORS.textMuted, fontSize: 11 }}>AM Total</p></div>
+                    {routes.reduce((s, r) => s + r.amMiles, 0).toFixed(1)}</p><p style={{ color: COLORS.textMuted, fontSize: 11 }}>AM Miles</p></div>
                   <div><p style={{ color: COLORS.blue, fontSize: 20, fontWeight: 800, margin: 0 }}>
-                    {routes.reduce((s, r) => s + r.pmMiles, 0).toFixed(1)}</p><p style={{ color: COLORS.textMuted, fontSize: 11 }}>PM Total</p></div>
+                    {routes.reduce((s, r) => s + r.pmMiles, 0).toFixed(1)}</p><p style={{ color: COLORS.textMuted, fontSize: 11 }}>PM Miles</p></div>
                   <div><p style={{ color: COLORS.yellow, fontSize: 20, fontWeight: 800, margin: 0 }}>
-                    {routes.reduce((s, r) => s + r.amMiles + r.pmMiles, 0).toFixed(1)}</p><p style={{ color: COLORS.textMuted, fontSize: 11 }}>Daily Total</p></div>
+                    {routes.reduce((s, r) => s + r.amMiles + r.pmMiles, 0).toFixed(1)}</p><p style={{ color: COLORS.textMuted, fontSize: 11 }}>Total Miles</p></div>
+                  {isAdmin && (
+                    <div style={{ background:"#f0fdf4", borderRadius:8, padding:4 }}>
+                      <p style={{ color: "#166534", fontSize: 20, fontWeight: 800, margin: 0 }}>
+                        ${(routes.reduce((s, r) => s + r.amMiles + r.pmMiles, 0) * 3.42).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}
+                      </p>
+                      <p style={{ color: COLORS.textMuted, fontSize: 11 }}>Est. Reimbursement</p>
+                    </div>
+                  )}
                 </div>
               </Card>
               <Card style={{ marginBottom: 12, padding: 0 }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-                      {["Route", "AM Mi", "PM Mi", "Total"].map(h => (
+                      {["Route", "Driver", "AM Mi", "PM Mi", "Total Mi", ...(isAdmin ? ["Reimb."] : [])].map(h => (
                         <th key={h} style={{ padding: "10px 8px", color: COLORS.textDim, fontSize: 11, textAlign: "left", fontWeight: 600 }}>{h}</th>
                       ))}
                     </tr>
@@ -2171,23 +2199,41 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
                   <tbody>
                     {routes.map(r => (
                       <tr key={r.id} style={{ borderBottom: `1px solid ${COLORS.border}` }}>
-                        <td style={{ padding: "8px", color: COLORS.text, fontSize: 13 }}>{r.name}</td>
+                        <td style={{ padding: "8px", color: COLORS.text, fontSize: 13, fontWeight: 600 }}>{r.name}</td>
+                        <td style={{ padding: "8px", color: COLORS.textMuted, fontSize: 12 }}>{r.driver}</td>
                         <td style={{ padding: "8px", color: COLORS.accent, fontSize: 13 }}>{r.amMiles}</td>
                         <td style={{ padding: "8px", color: COLORS.blue, fontSize: 13 }}>{r.pmMiles}</td>
                         <td style={{ padding: "8px", color: COLORS.yellow, fontSize: 13, fontWeight: 700 }}>{(r.amMiles + r.pmMiles).toFixed(1)}</td>
+                        {isAdmin && (
+                          <td style={{ padding: "8px", color: "#166534", fontSize: 13, fontWeight: 700 }}>
+                            ${((r.amMiles + r.pmMiles) * 3.42).toFixed(2)}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
-                    <tr style={{ background: COLORS.cardHover }}>
-                      <td style={{ padding: "10px 8px", color: COLORS.text, fontSize: 13, fontWeight: 700 }}>TOTAL</td>
+                    <tr style={{ background: COLORS.bg, borderTop: `2px solid ${COLORS.border}` }}>
+                      <td style={{ padding: "10px 8px", color: COLORS.text, fontSize: 13, fontWeight: 700 }} colSpan={2}>TOTAL</td>
                       <td style={{ padding: "10px 8px", color: COLORS.accent, fontWeight: 700 }}>{routes.reduce((s, r) => s + r.amMiles, 0).toFixed(1)}</td>
                       <td style={{ padding: "10px 8px", color: COLORS.blue, fontWeight: 700 }}>{routes.reduce((s, r) => s + r.pmMiles, 0).toFixed(1)}</td>
                       <td style={{ padding: "10px 8px", color: COLORS.yellow, fontWeight: 700 }}>{routes.reduce((s, r) => s + r.amMiles + r.pmMiles, 0).toFixed(1)}</td>
+                      {isAdmin && (
+                        <td style={{ padding: "10px 8px", color: "#166534", fontWeight: 700 }}>
+                          ${(routes.reduce((s, r) => s + r.amMiles + r.pmMiles, 0) * 3.42).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}
+                        </td>
+                      )}
                     </tr>
                   </tfoot>
                 </table>
               </Card>
+              {isAdmin && (
+                <Card style={{ background:"#f0fdf4", border:`1px solid #86efac` }}>
+                  <p style={{ color:"#166534", fontSize:12, margin:0, fontWeight:600 }}>
+                    💰 Rate: $3.42/mile (HA0935 Contract Rate) · Total Est: ${(routes.reduce((s,r)=>s+r.amMiles+r.pmMiles,0)*3.42).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+                  </p>
+                </Card>
+              )}
             </div>
           )}
 
@@ -2230,9 +2276,9 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
               {/* Stats */}
               <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
                 {[
-                  { label:"Drivers", value: users.filter(u=>u.role==="driver").length, color: COLORS.accent },
-                  { label:"Managers", value: users.filter(u=>u.role==="manager").length, color: COLORS.yellow },
-                  { label:"Admins", value: users.filter(u=>u.role==="admin").length, color: COLORS.red },
+                  { label:"Drivers",    value: users.filter(u=>u.role==="driver").length,          color: COLORS.accent },
+                  { label:"Managers",   value: users.filter(u=>u.role==="manager").length,         color: COLORS.yellow },
+                  { label:"Admin Asst", value: users.filter(u=>u.role==="admin_assistant").length, color: "#7c3aed" },
                 ].map(s => (
                   <Card key={s.label} style={{ textAlign:"center", padding:10 }}>
                     <p style={{ color:s.color, fontSize:20, fontWeight:800, margin:0 }}>{s.value}</p>
@@ -2308,8 +2354,43 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
                 </Card>
               ))}
 
+              {/* Admin Assistants section */}
+              {isAdmin && (
+                <>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", margin:"16px 0 10px" }}>
+                    <h4 style={{ color: COLORS.text, margin:0, fontSize:14 }}>🗂️ Admin Assistants</h4>
+                    <Btn small onClick={() => { setNewDriver({name:'',username:'',password:'',role:'admin_assistant'}); setShowAddDriver(true); }}>+ Add</Btn>
+                  </div>
+                  {users.filter(u => u.role === "admin_assistant").length === 0 && (
+                    <Card style={{ marginBottom:8, textAlign:"center" }}>
+                      <p style={{ color: COLORS.textMuted, fontSize:12 }}>No admin assistants added yet</p>
+                    </Card>
+                  )}
+                  {users.filter(u => u.role === "admin_assistant").map(u => (
+                    <Card key={u.id} style={{ marginBottom:8 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                        <div>
+                          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                            <p style={{ color: COLORS.text, margin:0, fontSize:14, fontWeight:600 }}>{u.name}</p>
+                            <Badge color="#7c3aed">Admin Assistant</Badge>
+                          </div>
+                          <p style={{ color: COLORS.textMuted, margin:0, fontSize:11 }}>Login: @{u.username}</p>
+                          <p style={{ color: COLORS.textDim, margin:"2px 0 0", fontSize:10 }}>Full dashboard access · No financial data</p>
+                        </div>
+                        <div style={{ display:"flex", gap:6 }}>
+                          <button onClick={() => { setEditUser(u); setShowEditUser(true); }}
+                            style={{ background:"none", border:`1px solid ${COLORS.border}`, color: COLORS.textMuted, cursor:"pointer", fontSize:12, padding:"4px 8px", borderRadius:6 }}>✏️</button>
+                          <button onClick={() => handleRemoveUser(u.id)}
+                            style={{ background:"none", border:"none", color: COLORS.red, cursor:"pointer", fontSize:16, padding:"4px 6px" }}>✕</button>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </>
+              )}
+
               {/* Admins section */}
-              {user.role === "admin" && (
+              {isAdmin && (
                 <>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", margin:"16px 0 10px" }}>
                     <h4 style={{ color: COLORS.text, margin:0, fontSize:14 }}>🔐 System Admins</h4>
@@ -2321,9 +2402,10 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
                         <div>
                           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                             <p style={{ color: COLORS.text, margin:0, fontSize:14, fontWeight:600 }}>{u.name}</p>
-                            <Badge color={COLORS.red}>Admin</Badge>
+                            <Badge color={COLORS.red}>System Admin</Badge>
                           </div>
                           <p style={{ color: COLORS.textMuted, margin:0, fontSize:11 }}>Login: @{u.username}</p>
+                          <p style={{ color: COLORS.textDim, margin:"2px 0 0", fontSize:10 }}>Full access including financial data</p>
                         </div>
                         <div style={{ display:"flex", gap:6 }}>
                           <button onClick={() => { setEditUser(u); setShowEditUser(true); }}
@@ -2344,7 +2426,7 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
                 <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
                   <Card style={{ width:"100%", maxWidth:420 }}>
                     <h3 style={{ color: COLORS.text, margin:"0 0 16px" }}>
-                      Add {newDriver.role === 'driver' ? 'Driver' : newDriver.role === 'manager' ? 'Manager' : 'Admin'}
+                      Add {newDriver.role === 'driver' ? 'Driver' : newDriver.role === 'manager' ? 'Manager' : newDriver.role === 'admin_assistant' ? 'Admin Assistant' : 'System Admin'}
                     </h3>
                     <Input label="Full Name *" value={newDriver.name} onChange={e => setNewDriver(p=>({...p,name:e.target.value}))} placeholder="e.g. John Smith" />
                     <Input label="Username *" value={newDriver.username} onChange={e => setNewDriver(p=>({...p,username:e.target.value}))} placeholder="Login username (no spaces)" />
@@ -2355,6 +2437,7 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
                         style={{ width:"100%", padding:"10px 12px", background: COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color: COLORS.text, fontSize:14 }}>
                         <option value="driver">Driver</option>
                         <option value="manager">Manager</option>
+                        <option value="admin_assistant">Admin Assistant</option>
                         {user.role === "admin" && <option value="admin">System Admin</option>}
                       </select>
                     </div>
@@ -2410,9 +2493,9 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
             </div>
           )}
 
-          {/* REPORTS TAB */}
-          {tab === "reports" && (
-            <ReportsTab logs={logs} routes={routes} />
+          {/* REPORTS TAB — Admin, Admin Assistant, and Manager */}
+          {tab === "reports" && isFullAccess && (
+            <ReportsTab logs={logs} routes={routes} isAdmin={isAdmin} />
           )}
         </div>
       </div>
@@ -2421,7 +2504,7 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
 };
 
 // ============ REPORTS TAB COMPONENT ============
-function ReportsTab({ logs, routes }) {
+function ReportsTab({ logs, routes, isAdmin }) {
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
@@ -2477,22 +2560,22 @@ function ReportsTab({ logs, routes }) {
   });
 
   const handleDownloadKTS = () => {
-    const blob = generateKTSTrackerBlob(monthLogs, routes, selectedMonth);
+    const blob = generateKTSTrackerBlob(monthLogs, routes, selectedMonth, isAdmin);
     if (blob) downloadBlob(blob, `KTS_Client_Tracker_${monthName.replace(' ','_')}.xlsx`);
   };
 
   const handleDownloadPriority = () => {
-    const blob = generatePriorityTrackerBlob(monthLogs, selectedMonth);
+    const blob = generatePriorityTrackerBlob(monthLogs, selectedMonth, isAdmin);
     if (blob) downloadBlob(blob, `Priority_Transportation_Tracker_${monthName.replace(' ','_')}.xlsx`);
   };
 
   const handleDownloadHA0935 = () => {
-    const blob = generateHA0935Blob(monthLogs, routes, selectedMonth);
+    const blob = generateHA0935Blob(monthLogs, routes, selectedMonth, isAdmin);
     if (blob) downloadBlob(blob, `HA0935_Khan_Transportation_${monthName.replace(' ','_')}.xlsx`);
   };
 
   const handleDownloadHV0713 = () => {
-    const blob = generateHV0713Blob(monthLogs, selectedMonth);
+    const blob = generateHV0713Blob(monthLogs, selectedMonth, isAdmin);
     if (blob) downloadBlob(blob, `HV0713_Priority_Transportation_${monthName.replace(' ','_')}.xlsx`);
   };
 
@@ -2529,9 +2612,23 @@ function ReportsTab({ logs, routes }) {
       {/* Download Section */}
       <Card style={{ marginBottom:16, border:`2px solid ${COLORS.accent}33` }}>
         <h4 style={{ color: COLORS.text, margin:'0 0 6px', fontSize:15 }}>📥 Download Excel Reports</h4>
-        <p style={{ color: COLORS.textDim, fontSize:12, margin:'0 0 14px' }}>
-          Files match your HA0935/HV0713 template exactly — gray weekends, yellow weekdays, blue headers. Data auto-fills from driver submissions.
+        <p style={{ color: COLORS.textDim, fontSize:12, margin:'0 0 6px' }}>
+          Gray weekends · Yellow weekdays · Blue headers — data auto-fills from driver submissions.
         </p>
+        {!isAdmin && (
+          <div style={{ background:'#fffbeb', border:`1px solid ${COLORS.yellow}`, borderRadius:8, padding:'8px 12px', marginBottom:12 }}>
+            <p style={{ color:'#92400e', fontSize:11, margin:0 }}>
+              📋 Your download includes mileage and attendance data. Rate and reimbursement amounts are visible to System Admin only.
+            </p>
+          </div>
+        )}
+        {isAdmin && (
+          <div style={{ background:'#f0fdf4', border:`1px solid #86efac`, borderRadius:8, padding:'8px 12px', marginBottom:12 }}>
+            <p style={{ color:'#166534', fontSize:11, margin:0 }}>
+              💰 Your download includes full financial data: $3.42/mile rate, reimbursement totals, and invoice grand totals.
+            </p>
+          </div>
+        )}
 
         {/* KTS Khan Transportation */}
         <div style={{ background:'#f0f9ff', borderRadius:10, padding:14, marginBottom:10 }}>
@@ -2820,7 +2917,7 @@ function styleAttendance(ws, allDays, numClients) {
 }
 
 // ── MAIN KTS TRACKER GENERATOR ────────────────────────────────────────────────
-function generateKTSTrackerBlob(logs, routes, monthYear) {
+function generateKTSTrackerBlob(logs, routes, monthYear, showFinancials = false) {
   if (typeof XLSX === 'undefined') { alert('Excel library not loaded. Check your internet connection.'); return null; }
   const [year, month] = monthYear.split('-').map(Number);
   const allDays = getAllDays(year, month);
@@ -2873,15 +2970,17 @@ function generateKTSTrackerBlob(logs, routes, monthYear) {
   rdData.push(dtRow);
 
   rdData.push([]);
-  rdData.push(['Vehicle Service Mile Estimate']);
+  rdData.push(['Vehicle Service Miles Summary']);
   rdData.push([]);
-  const rateRow = rdData.length + 2;
   rdData.push(['', {f:`${totalColL}${dtRowIdx}`}, '', 'Total Vehicle Service Miles (total of all routes)']);
-  rdData.push(['', 3.42, '', 'Contract Vehicle Service Mile Rate ($3.42/mile)']);
-  rdData.push(['', {f:`B${rateRow-1}*B${rateRow}`}, '', 'Total Vehicle Service Mile Reimbursement']);
-  rdData.push([]);
-  rdData.push(['Total SS0 Vehicle Service Miles Reimbursement', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', {f:`B${rateRow+1}`}]);
-  rdData.push(['Invoice Grand Total', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', {f:`B${rateRow+1}`}]);
+  if (showFinancials) {
+    const rateRow = rdData.length + 1;
+    rdData.push(['', 3.42, '', 'Contract Vehicle Service Mile Rate ($3.42/mile)']);
+    rdData.push(['', {f:`B${rateRow}*B${rateRow+1}`}, '', 'Total Vehicle Service Mile Reimbursement']);
+    rdData.push([]);
+    rdData.push(['Total SS0 Vehicle Service Miles Reimbursement', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', {f:`B${rateRow+1}`}]);
+    rdData.push(['Invoice Grand Total', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', {f:`B${rateRow+1}`}]);
+  }
 
   const wsRD = XLSX.utils.aoa_to_sheet(rdData);
   styleRouteDetail(wsRD, allDays, routes.length, year, month);
@@ -3046,7 +3145,7 @@ function generateKTSTrackerBlob(logs, routes, monthYear) {
   return new Blob([wbout], {type:'application/octet-stream'});
 }
 
-function generatePriorityTrackerBlob(logs, monthYear) {
+function generatePriorityTrackerBlob(logs, monthYear, showFinancials = false) {
   if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return null; }
   const [year, month] = monthYear.split('-').map(Number);
   const allDays = getAllDays(year, month);
@@ -3079,11 +3178,15 @@ function generatePriorityTrackerBlob(logs, monthYear) {
   allDays.forEach((d,ci)=>{ if(isWeekend(d)){dtRow.push('');return;} dtRow.push({f:segRows.map(r=>`${col(2+ci)}${r}`).join('+')}); });
   dtRow.push({f:`SUM(C${dtR}:${col(1+allDays.length)}${dtR})`});
   rdData.push(dtRow);
-  rdData.push([]);rdData.push(['Vehicle Rate Estimate']);rdData.push([]);
+  rdData.push([]);
+  rdData.push(['Vehicle Service Miles Summary']);
+  rdData.push([]);
   const tl=col(2+allDays.length);
   rdData.push(['',{f:`${tl}${dtR}`},'','Total Vehicle Units']);
-  rdData.push(['',166.94,'','Vehicle Unit Rate ($166.94)']);
-  rdData.push(['',{f:`B${rdData.length}*B${rdData.length+1}`},'','Total Vehicle Reimbursement']);
+  if (showFinancials) {
+    rdData.push(['',166.94,'','Vehicle Unit Rate ($166.94)']);
+    rdData.push(['',{f:`B${rdData.length}*B${rdData.length+1}`},'','Total Vehicle Reimbursement']);
+  }
   const wsRD = XLSX.utils.aoa_to_sheet(rdData);
   styleRouteDetail(wsRD, allDays, prRoutes.length, year, month);
   wsRD['!cols']=[{wch:12},{wch:14},...allDays.map(()=>({wch:5.5})),{wch:10}];
@@ -3122,12 +3225,11 @@ function generatePriorityTrackerBlob(logs, monthYear) {
   return new Blob([wbout],{type:'application/octet-stream'});
 }
 
-// HA0935 and HV0713 now just delegate to the full generators above
-function generateHA0935Blob(logs, routes, monthYear) {
-  return generateKTSTrackerBlob(logs, routes, monthYear);
+function generateHA0935Blob(logs, routes, monthYear, showFinancials = false) {
+  return generateKTSTrackerBlob(logs, routes, monthYear, showFinancials);
 }
-function generateHV0713Blob(logs, monthYear) {
-  return generatePriorityTrackerBlob(logs, monthYear);
+function generateHV0713Blob(logs, monthYear, showFinancials = false) {
+  return generatePriorityTrackerBlob(logs, monthYear, showFinancials);
 }
 
 function downloadBlob(blob, filename) {
@@ -3171,7 +3273,7 @@ function App() {
 
   // Auto-download previous month when a new month starts
   useEffect(() => {
-    if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'manager')) return;
+    if (!currentUser || !['admin','admin_assistant','manager'].includes(currentUser.role)) return;
     const now = new Date();
     const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
     try {
@@ -3181,11 +3283,12 @@ function App() {
         if (prevMonthLogs.length > 0) {
           const [py, pm] = lastAutoDownload.split('-').map(Number);
           const monthName = new Date(py, pm-1, 1).toLocaleString('en-US',{month:'long',year:'numeric'});
+          const isAdminUser = currentUser.role === 'admin';
           setTimeout(() => {
             if (window.confirm(`📅 New month detected! Auto-download ${monthName} reports now?`)) {
-              const ktsBlob = generateKTSTrackerBlob(prevMonthLogs, routes, lastAutoDownload);
+              const ktsBlob = generateKTSTrackerBlob(prevMonthLogs, routes, lastAutoDownload, isAdminUser);
               if (ktsBlob) downloadBlob(ktsBlob, `KTS_Client_Tracker_${monthName.replace(' ','_')}.xlsx`);
-              const ptBlob = generatePriorityTrackerBlob(prevMonthLogs, lastAutoDownload);
+              const ptBlob = generatePriorityTrackerBlob(prevMonthLogs, lastAutoDownload, isAdminUser);
               if (ptBlob) downloadBlob(ptBlob, `Priority_Transportation_${monthName.replace(' ','_')}.xlsx`);
             }
           }, 1500);
@@ -3221,7 +3324,7 @@ function App() {
 
   if (!currentUser) return <LoginScreen onLogin={handleLogin} users={users} />;
 
-  const isAdminOrMgr = currentUser.role === "admin" || currentUser.role === "manager";
+  const isAdminOrMgr = ['admin','admin_assistant','manager'].includes(currentUser.role);
 
   // Password change modal — available to everyone
   const ChangePasswordModal = () => (
