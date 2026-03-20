@@ -828,15 +828,22 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
   const [period, setPeriod] = useState("am");
   const [startOdo, setStartOdo] = useState("");
   const [endOdo, setEndOdo] = useState("");
-  const [clientStatus, setClientStatus] = useState({});
-  const [absentClients, setAbsentClients] = useState({}); // { clientName: true } = went to address but client absent
+  // Default all clients to present (green) — driver flips to red if absent
+  const [clientStatus, setClientStatus] = useState(() => {
+    const defaults = {};
+    // Will be populated once driverRoute is known (see below)
+    return defaults;
+  });
+  const [absentClients, setAbsentClients] = useState({}); // client went to address but wasn't there — mileage counts
+  const [calledOut, setCalledOut] = useState({});         // client called before driver left — NO mileage
   const [baseStarted, setBaseStarted] = useState({});
   const [timestamps, setTimestamps] = useState({});
   const [amSubmitted, setAmSubmitted] = useState(false);
   const [pmSubmitted, setPmSubmitted] = useState(false);
   const [showPmSummary, setShowPmSummary] = useState(false);
+  const [showCalloutTab, setShowCalloutTab] = useState(false); // callout modal before route
   const [inspectionDone, setInspectionDone] = useState(false);
-  const [activeView, setActiveView] = useState("log"); // "log" or "inspection"
+  const [activeView, setActiveView] = useState("log");
   const [loginTime] = useState(new Date());
   const [flashInspection, setFlashInspection] = useState(false);
   const [amSignature, setAmSignature] = useState(null);
@@ -909,23 +916,47 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
     if (!timestamps[stopId]) setTimestamps(p => ({ ...p, [stopId]: new Date().toLocaleTimeString() }));
   };
 
+  // Default: client is green (present=true). Driver taps to flip red (absent).
+  // If client is calledOut, they are hidden from route entirely (no mileage).
   const handleClientToggle = (clientName) => {
-    setClientStatus(p => ({ ...p, [`${period}_${clientName}`]: !p[`${period}_${clientName}`] }));
-    if (!timestamps[`${period}_${clientName}`]) setTimestamps(p => ({ ...p, [`${period}_${clientName}`]: new Date().toLocaleTimeString() }));
+    const key = `${period}_${clientName}`;
+    const current = clientStatus[key];
+    // true = present (green), false/undefined = absent (red, mileage counted)
+    setClientStatus(p => ({ ...p, [key]: current === false ? true : false }));
+    if (!timestamps[key]) setTimestamps(p => ({ ...p, [key]: new Date().toLocaleTimeString() }));
   };
 
-  const handleAbsentToggle = (clientName) => {
-    setAbsentClients(p => ({ ...p, [clientName]: !p[clientName] }));
+  // Initialise all active clients as green (present) for this period
+  const initClientStatus = (p) => {
+    if (!driverRoute) return;
+    setClientStatus(prev => {
+      const updated = { ...prev };
+      driverRoute.clients.filter(c => c.active).forEach(c => {
+        const key = `${p}_${c.name}`;
+        if (!(key in updated)) updated[key] = true; // default green
+      });
+      return updated;
+    });
   };
 
-  // Get all unique active clients for the route
+  // Toggle called-out (before driver left — no mileage)
+  const handleCalledOutToggle = (clientName) => {
+    setCalledOut(p => ({ ...p, [clientName]: !p[clientName] }));
+  };
+
+  // Get all unique active clients for the route (exclude called-out)
   const allActiveClients = driverRoute.clients.filter(c => c.active);
+  const routingClients = allActiveClients.filter(c => !calledOut[c.name]); // on-route clients
 
   const handleSubmitAM = () => {
     if (!startOdo) return alert("Starting odometer is required");
     if (!amSignature) return alert("Signature is required for AM route");
     setAmSubmitted(true);
-    if (onSubmit) onSubmit({ period: "am", startOdo, endOdo, clientStatus, absentClients, timestamps, route: driverRoute.name, driver: displayDriver, signature: amSignature, date: today });
+    if (onSubmit) onSubmit({
+      period: "am", startOdo, endOdo, clientStatus, absentClients, calledOut,
+      timestamps, route: driverRoute.name, routeId: driverRoute.id,
+      driver: displayDriver, signature: amSignature, date: today
+    });
   };
 
   const handleSubmitPM = () => {
@@ -937,7 +968,11 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
   const confirmPmSubmit = () => {
     setPmSubmitted(true);
     setShowPmSummary(false);
-    if (onSubmit) onSubmit({ period: "pm", startOdo, endOdo, clientStatus, absentClients, timestamps, route: driverRoute.name, driver: displayDriver, signature: pmSignature, date: today });
+    if (onSubmit) onSubmit({
+      period: "pm", startOdo, endOdo, clientStatus, absentClients, calledOut,
+      timestamps, route: driverRoute.name, routeId: driverRoute.id,
+      driver: displayDriver, signature: pmSignature, date: today
+    });
   };
 
   const isSubmitted = period === "am" ? amSubmitted : pmSubmitted;
@@ -958,15 +993,87 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
         </div>
       </Card>
 
-      {/* AM / PM tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <Btn onClick={() => setPeriod("am")} color={period === "am" ? COLORS.accent : COLORS.border} style={{ flex: 1 }}>
+      {/* AM / PM tabs + Call-Out button */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+        <Btn onClick={() => { setPeriod("am"); initClientStatus("am"); }} color={period === "am" ? COLORS.accent : COLORS.border} style={{ flex: 1 }}>
           ☀️ AM {amSubmitted && "✅"}
         </Btn>
-        <Btn onClick={() => setPeriod("pm")} color={period === "pm" ? COLORS.blue : COLORS.border} style={{ flex: 1 }}>
+        <Btn onClick={() => { setPeriod("pm"); initClientStatus("pm"); }} color={period === "pm" ? COLORS.blue : COLORS.border} style={{ flex: 1 }}>
           🌙 PM {pmSubmitted && "✅"}
         </Btn>
       </div>
+
+      {/* Call-Out button — logs who called before driver left */}
+      <button onClick={() => setShowCalloutTab(true)} style={{
+        width: "100%", padding: "10px", marginBottom: 12,
+        background: Object.values(calledOut).some(Boolean) ? "#fef2f2" : COLORS.card,
+        border: `1px solid ${Object.values(calledOut).some(Boolean) ? COLORS.red : COLORS.border}`,
+        borderRadius: 10, color: Object.values(calledOut).some(Boolean) ? COLORS.red : COLORS.textMuted,
+        fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+      }}>
+        📵 Client Call-Outs
+        {Object.values(calledOut).filter(Boolean).length > 0 && (
+          <span style={{ background: COLORS.red, color:"#fff", borderRadius:10, padding:"1px 8px", fontSize:11 }}>
+            {Object.values(calledOut).filter(Boolean).length} called out
+          </span>
+        )}
+      </button>
+
+      {/* Call-Out Modal */}
+      {showCalloutTab && (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.5)", zIndex:200,
+          display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <div style={{ background: COLORS.card, borderRadius:16, width:"100%", maxWidth:440, maxHeight:"80vh", overflow:"auto", padding:20 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+              <h3 style={{ color: COLORS.text, margin:0, fontSize:16 }}>📵 Client Call-Outs</h3>
+              <button onClick={() => setShowCalloutTab(false)}
+                style={{ background:"none", border:"none", fontSize:22, cursor:"pointer", color: COLORS.textMuted, lineHeight:1 }}>✕</button>
+            </div>
+            <p style={{ color: COLORS.textDim, fontSize:12, margin:"0 0 4px" }}>
+              Mark clients who called out <strong>before</strong> the driver left base.
+            </p>
+            <p style={{ color: COLORS.accent, fontSize:11, margin:"0 0 14px", background:"#f0fdf4", padding:"6px 10px", borderRadius:8, borderLeft:`3px solid ${COLORS.accent}` }}>
+              ✅ Called-out clients are <strong>removed from the route</strong> — no mileage recorded.
+            </p>
+            <p style={{ color: COLORS.red, fontSize:11, margin:"0 0 14px", background:"#fef2f2", padding:"6px 10px", borderRadius:8, borderLeft:`3px solid ${COLORS.red}` }}>
+              ❌ If driver already headed to the address, use the red toggle on the route instead — mileage will still count.
+            </p>
+
+            {allActiveClients.map(cl => (
+              <div key={cl.name} style={{
+                display:"flex", alignItems:"center", justifyContent:"space-between",
+                padding:"12px 0", borderBottom:`1px solid ${COLORS.border}`,
+              }}>
+                <div style={{ flex:1 }}>
+                  <p style={{ margin:0, fontSize:14, fontWeight:600,
+                    color: calledOut[cl.name] ? COLORS.red : COLORS.text,
+                    textDecoration: calledOut[cl.name] ? "line-through" : "none" }}>
+                    {cl.name}
+                  </p>
+                  <p style={{ margin:"2px 0 0", fontSize:11, color: COLORS.textMuted }}>{cl.address}</p>
+                  {calledOut[cl.name] && (
+                    <Badge color={COLORS.red}>Called Out — No Mileage</Badge>
+                  )}
+                </div>
+                <button onClick={() => handleCalledOutToggle(cl.name)} style={{
+                  padding:"8px 14px", borderRadius:8, border:`1px solid ${calledOut[cl.name] ? COLORS.red : COLORS.border}`,
+                  background: calledOut[cl.name] ? "#fef2f2" : "transparent",
+                  color: calledOut[cl.name] ? COLORS.red : COLORS.textMuted,
+                  fontSize:12, fontWeight:700, cursor:"pointer", marginLeft:12,
+                }}>
+                  {calledOut[cl.name] ? "✕ Undo" : "Mark Called Out"}
+                </button>
+              </div>
+            ))}
+
+            <button onClick={() => setShowCalloutTab(false)} style={{
+              width:"100%", marginTop:16, padding:"12px",
+              background: COLORS.accent, color:"#fff", border:"none",
+              borderRadius:10, fontSize:14, fontWeight:700, cursor:"pointer",
+            }}>Done</button>
+          </div>
+        </div>
+      )}
 
       {isSubmitted ? (
         <Card style={{ textAlign: "center", padding: 24 }}>
@@ -1001,42 +1108,56 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
                   {stop.clients.map(cl => {
                     const client = driverRoute.clients.find(c => c.name === cl);
                     if (client && !client.active) return null;
+                    // Hide called-out clients from the route entirely
+                    if (calledOut[cl]) return (
+                      <div key={cl} style={{ padding:"6px 0", borderBottom:`1px solid ${COLORS.border}`, opacity:0.4 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          <span style={{ color: COLORS.textMuted, fontSize:12, textDecoration:"line-through" }}>{cl}</span>
+                          <Badge color={COLORS.red}>Called Out</Badge>
+                        </div>
+                      </div>
+                    );
                     const key = `${period}_${cl}`;
-                    const isAbsent = absentClients[cl];
+                    // true/undefined = present (green), false = absent (red, mileage counts)
+                    const isPresent = clientStatus[key] !== false;
                     return (
-                      <div key={cl} style={{ padding: "8px 0", borderBottom: `1px solid ${COLORS.border}` }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <div style={{ flex: 1 }}>
-                            <span style={{ color: COLORS.text, fontSize: 13, fontWeight: 600 }}>{cl}</span>
-                            {isAbsent && <Badge color={COLORS.red}>Absent</Badge>}
+                      <div key={cl} style={{
+                        padding:"10px 0", borderBottom:`1px solid ${COLORS.border}`,
+                        background: isPresent ? "transparent" : "#fff8f8",
+                        borderRadius: isPresent ? 0 : 6,
+                      }}>
+                        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                          <div style={{ flex:1 }}>
+                            <span style={{ color: isPresent ? COLORS.text : COLORS.red, fontSize:13, fontWeight:600 }}>{cl}</span>
+                            {!isPresent && (
+                              <Badge color={COLORS.red} style={{ marginLeft:6 }}>Absent — Mileage Counted</Badge>
+                            )}
                             {client?.address && (
-                              <div style={{ marginTop: 2 }}>
-                                <span style={{ color: COLORS.textMuted, fontSize: 11 }}>{client.address}</span>
+                              <div style={{ marginTop:2 }}>
+                                <span style={{ color: COLORS.textMuted, fontSize:11 }}>{client.address}</span>
                                 <MapsLink address={client.address} label="Home" />
                               </div>
                             )}
-                            {/* Day program address from the dropoff stop */}
                             {!stop.dropoff && (() => {
                               const dropStop = (period === "am" ? driverRoute.amStops : driverRoute.pmStops).find(s => s.dropoff && s.clients.includes(cl));
                               return dropStop ? (
-                                <div style={{ marginTop: 2 }}>
-                                  <span style={{ color: COLORS.textDim, fontSize: 11 }}>→ {dropStop.label || dropStop.address}</span>
+                                <div style={{ marginTop:2 }}>
+                                  <span style={{ color: COLORS.textDim, fontSize:11 }}>→ {dropStop.label || dropStop.address}</span>
                                   <MapsLink address={dropStop.address} label="Program" />
                                 </div>
                               ) : null;
                             })()}
-                            {timestamps[key] && <span style={{ color: COLORS.textMuted, fontSize: 10, display: "block", marginTop: 2 }}>⏱ {timestamps[key]}</span>}
+                            {timestamps[key] && <span style={{ color: COLORS.textMuted, fontSize:10, display:"block", marginTop:2 }}>⏱ {timestamps[key]}</span>}
                           </div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
-                            <Toggle on={!!clientStatus[key]} onChange={() => handleClientToggle(cl)} />
-                            {clientStatus[key] === false || !clientStatus[key] ? (
-                              <button onClick={() => handleAbsentToggle(cl)} style={{
-                                background: isAbsent ? COLORS.red + "22" : "transparent", border: `1px solid ${isAbsent ? COLORS.red : COLORS.border}`,
-                                borderRadius: 4, padding: "2px 6px", fontSize: 10, color: isAbsent ? COLORS.red : COLORS.textMuted, cursor: "pointer",
-                              }}>
-                                {isAbsent ? "Absent ✓" : "Mark Absent"}
-                              </button>
-                            ) : null}
+                          {/* Single toggle: green = present, red = absent (mileage still counts) */}
+                          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3, marginLeft:12 }}>
+                            <Toggle
+                              on={isPresent}
+                              onChange={() => handleClientToggle(cl)}
+                            />
+                            <span style={{ fontSize:9, color: isPresent ? COLORS.accent : COLORS.red, fontWeight:700, textTransform:"uppercase" }}>
+                              {isPresent ? "Present" : "Absent"}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -1084,46 +1205,60 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
 
       {/* PM Summary Modal */}
       {showPmSummary && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflow: "auto" }}>
-          <Card style={{ width: "100%", maxWidth: 420, maxHeight: "85vh", overflow: "auto" }}>
-            <h3 style={{ color: COLORS.text, margin: "0 0 4px", fontSize: 16 }}>📋 Daily Summary — {driverRoute.name}</h3>
-            <p style={{ color: COLORS.textDim, fontSize: 12, margin: "0 0 4px" }}>{today} · Driver: {displayDriver}</p>
-            <p style={{ color: COLORS.textDim, fontSize: 12, margin: "0 0 16px" }}>Odometer: {startOdo} → {endOdo} ({endOdo && startOdo ? endOdo - startOdo : "—"} mi)</p>
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.5)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16, overflow:"auto" }}>
+          <Card style={{ width:"100%", maxWidth:420, maxHeight:"85vh", overflow:"auto" }}>
+            <h3 style={{ color: COLORS.text, margin:"0 0 4px", fontSize:16 }}>📋 Daily Summary — {driverRoute.name}</h3>
+            <p style={{ color: COLORS.textDim, fontSize:12, margin:"0 0 4px" }}>{today} · Driver: {displayDriver}</p>
+            <p style={{ color: COLORS.textDim, fontSize:12, margin:"0 0 16px" }}>Odometer: {startOdo} → {endOdo} ({endOdo && startOdo ? Number(endOdo)-Number(startOdo) : "—"} mi)</p>
 
-            <h4 style={{ color: COLORS.accent, fontSize: 13, margin: "0 0 8px" }}>✅ Clients Who Went Today</h4>
-            {allActiveClients.filter(c => clientStatus[`am_${c.name}`] || clientStatus[`pm_${c.name}`]).length === 0 ? (
-              <p style={{ color: COLORS.textMuted, fontSize: 12, marginBottom: 12 }}>No clients marked as picked up.</p>
+            {/* ✅ Present — went and got in */}
+            <h4 style={{ color: COLORS.accent, fontSize:13, margin:"0 0 8px", padding:"6px 10px", background:"#f0fdf4", borderRadius:6 }}>
+              ✅ Clients Who Went
+            </h4>
+            {allActiveClients.filter(c => !calledOut[c.name] && clientStatus[`am_${c.name}`] !== false && clientStatus[`pm_${c.name}`] !== false).length === 0 ? (
+              <p style={{ color: COLORS.textMuted, fontSize:12, marginBottom:12 }}>No clients marked as picked up.</p>
             ) : (
-              allActiveClients.filter(c => clientStatus[`am_${c.name}`] || clientStatus[`pm_${c.name}`]).map(c => (
-                <div key={c.name} style={{ padding: "6px 0", borderBottom: `1px solid ${COLORS.border}` }}>
-                  <span style={{ color: COLORS.text, fontSize: 13 }}>{c.name}</span>
-                  <span style={{ color: COLORS.accent, fontSize: 11, marginLeft: 8 }}>✓ Present</span>
+              allActiveClients.filter(c => !calledOut[c.name] && (clientStatus[`am_${c.name}`] !== false || clientStatus[`pm_${c.name}`] !== false)).map(c => (
+                <div key={c.name} style={{ padding:"6px 0", borderBottom:`1px solid ${COLORS.border}` }}>
+                  <span style={{ color: COLORS.text, fontSize:13 }}>{c.name}</span>
+                  <span style={{ color: COLORS.accent, fontSize:11, marginLeft:8 }}>✓ Present</span>
                 </div>
               ))
             )}
 
-            <h4 style={{ color: COLORS.red, fontSize: 13, margin: "16px 0 8px" }}>❌ Absent Clients (driver went to address)</h4>
-            {allActiveClients.filter(c => absentClients[c.name]).length === 0 ? (
-              <p style={{ color: COLORS.textMuted, fontSize: 12, marginBottom: 12 }}>No absent clients.</p>
+            {/* ❌ Absent — driver went to address, client wasn't there (mileage counts) */}
+            <h4 style={{ color: COLORS.red, fontSize:13, margin:"16px 0 8px", padding:"6px 10px", background:"#fef2f2", borderRadius:6 }}>
+              ❌ Absent — Driver Went to Address (Mileage Counted)
+            </h4>
+            {allActiveClients.filter(c => !calledOut[c.name] && (clientStatus[`am_${c.name}`] === false || clientStatus[`pm_${c.name}`] === false)).length === 0 ? (
+              <p style={{ color: COLORS.textMuted, fontSize:12, marginBottom:12 }}>No absent clients.</p>
             ) : (
-              allActiveClients.filter(c => absentClients[c.name]).map(c => (
-                <div key={c.name} style={{ padding: "6px 0", borderBottom: `1px solid ${COLORS.border}` }}>
-                  <span style={{ color: COLORS.text, fontSize: 13 }}>{c.name}</span>
+              allActiveClients.filter(c => !calledOut[c.name] && (clientStatus[`am_${c.name}`] === false || clientStatus[`pm_${c.name}`] === false)).map(c => (
+                <div key={c.name} style={{ padding:"6px 0", borderBottom:`1px solid ${COLORS.border}` }}>
+                  <span style={{ color: COLORS.text, fontSize:13 }}>{c.name}</span>
                   <Badge color={COLORS.red}>Absent — Mileage counted</Badge>
                 </div>
               ))
             )}
 
-            <h4 style={{ color: COLORS.textMuted, fontSize: 13, margin: "16px 0 8px" }}>⚪ Not On Route Today</h4>
-            {allActiveClients.filter(c => !clientStatus[`am_${c.name}`] && !clientStatus[`pm_${c.name}`] && !absentClients[c.name]).map(c => (
-              <div key={c.name} style={{ padding: "6px 0", borderBottom: `1px solid ${COLORS.border}`, opacity: 0.5 }}>
-                <span style={{ color: COLORS.text, fontSize: 13 }}>{c.name}</span>
-              </div>
-            ))}
+            {/* 📵 Called Out — notified before driver left (no mileage) */}
+            {Object.values(calledOut).some(Boolean) && (
+              <>
+                <h4 style={{ color: COLORS.yellow, fontSize:13, margin:"16px 0 8px", padding:"6px 10px", background:"#fffbeb", borderRadius:6 }}>
+                  📵 Called Out Before Departure (No Mileage)
+                </h4>
+                {allActiveClients.filter(c => calledOut[c.name]).map(c => (
+                  <div key={c.name} style={{ padding:"6px 0", borderBottom:`1px solid ${COLORS.border}`, opacity:0.7 }}>
+                    <span style={{ color: COLORS.text, fontSize:13 }}>{c.name}</span>
+                    <Badge color={COLORS.yellow}>Called Out — No Mileage</Badge>
+                  </div>
+                ))}
+              </>
+            )}
 
-            <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
-              <Btn onClick={confirmPmSubmit} color={COLORS.accent} style={{ flex: 1 }}>Confirm & Submit</Btn>
-              <Btn outline onClick={() => setShowPmSummary(false)} style={{ flex: 1 }}>Go Back</Btn>
+            <div style={{ display:"flex", gap:8, marginTop:20 }}>
+              <Btn onClick={confirmPmSubmit} color={COLORS.accent} style={{ flex:1 }}>Confirm & Submit</Btn>
+              <Btn outline onClick={() => setShowPmSummary(false)} style={{ flex:1 }}>Go Back</Btn>
             </div>
           </Card>
         </div>
