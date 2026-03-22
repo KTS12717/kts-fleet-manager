@@ -75,201 +75,354 @@ const USERS_DEFAULT = [
 ];
 
 const ROUTES_DEFAULT = [
+
+  // ROUTE 1 — Driver: Patrick
   {
-    id: "r1", name: "Route 1", driver: "Patrick", vehicleId: "Khan 1",
-    amStops: [
-      { id: "r1a1", type: "base", label: "Base", address: BASE_ADDRESS, time: "6:25 AM", clients: [] },
-      { id: "r1a2", type: "pickup", address: "10326 Machico Way, Elk Grove CA", time: "7:00 AM", clients: ["Anthony Stayner", "George Orin"] },
-      { id: "r1a3", type: "pickup", address: "618 Union St., Isleton CA", time: "", clients: ["Alex Gomez"] },
-      { id: "r1a4", type: "dropoff", label: "PCS", address: "4155 N. El Dorado St., Stockton CA", time: "8:00 AM", clients: ["Anthony Stayner", "George Orin"], dropoff: true },
-      { id: "r1a5", type: "pickup", address: "746 Elk Hills Dr., Galt CA", time: "", clients: ["Pablo Tinoco"] },
-      { id: "r1a6", type: "dropoff", label: "Galt Act", address: "1067 C Street Ste 116, Galt CA", time: "8:45 AM", clients: ["Alex Gomez", "Pablo Tinoco"], dropoff: true },
-      { id: "r1a7", type: "pickup", address: "9812 Harvey Road, Galt CA 95632", time: "", clients: ["Shon Teel", "Glen Wells"] },
-      { id: "r1a8", type: "dropoff", label: "CVTC", address: "7209 Tam O'Shanter Dr., Stockton CA", time: "9:15 AM", clients: ["Shon Teel", "Glen Wells"], dropoff: true },
-      { id: "r1a9", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    id:"r1", name:"Route 1", driver:"Patrick", vehicleId:"Khan 1",
+    amMiles:111, pmMiles:116,
+    clients:[
+      { name:"Butterfield, Ashley", address:"11682 County Rd 97, Woodland CA",
+        dayProgram:"Milieu Center", dropoffAddress:"3951 Performance Dr., Sacramento CA 95826",
+        uci:"", active:true, status:"active", pickupTime:"", dropoffTime:"8:45 AM" },
+      { name:"Kumler, Joshua", address:"2035 Ready Dr., Woodland CA 95776",
+        dayProgram:"Futures Explored Film & Media", dropoffAddress:"2533 R St Ste 120, Sacramento CA 95816",
+        uci:"8316898", active:true, status:"active", pickupTime:"", dropoffTime:"9:30 AM" },
     ],
-    pmStops: [
-      { id: "r1p1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r1p2", type: "pickup", label: "CVTC", address: "7209 Tam O'Shanter Dr., Stockton CA", time: "1:15 PM", clients: ["Shon Teel", "Glen Wells"] },
-      { id: "r1p3", type: "pickup", label: "PCS", address: "4155 N. El Dorado St., Stockton CA", time: "1:30 PM", clients: ["Anthony Stayner", "George Orin"] },
-      { id: "r1p4", type: "dropoff", address: "9812 Harvey Rd., Galt CA", time: "", clients: ["Shon Teel", "Glen Wells"], dropoff: true },
-      { id: "r1p5", type: "pickup", label: "Galt Act", address: "1067 C Street Ste 116, Galt CA", time: "", clients: ["Alex Gomez", "Pablo Tinoco"] },
-      { id: "r1p6", type: "dropoff", address: "10326 Machico Way, Elk Grove CA", time: "", clients: ["Anthony Stayner", "George Orin"], dropoff: true },
-      { id: "r1p7", type: "dropoff", address: "618 Union St., Isleton CA", time: "", clients: ["Alex Gomez"], dropoff: true },
-      { id: "r1p8", type: "dropoff", address: "746 Elk Hills Dr., Galt CA", time: "", clients: ["Pablo Tinoco"], dropoff: true },
-      { id: "r1p9", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    amStops:[
+      { id:"r1a1", type:"base",    label:"Base",                                address:"10375 Live Oak Ave., Galt CA 95632",                             time:"6:30 AM", clients:[], dropoff:false },
+      { id:"r1a2", type:"pickup",  label:"Pickup — Ashley Butterfield",         address:"11682 County Rd 97, Woodland CA",                                time:"",        clients:["Butterfield, Ashley"], dropoff:false },
+      { id:"r1a3", type:"pickup",  label:"Pickup — Joshua Kumler",              address:"2035 Ready Dr., Woodland CA 95776",                              time:"",        clients:["Kumler, Joshua"], dropoff:false },
+      { id:"r1a4", type:"dropoff", label:"Milieu Center",                       address:"3951 Performance Dr., Sacramento CA 95826",                      time:"8:45 AM", clients:["Butterfield, Ashley"], dropoff:true },
+      { id:"r1a5", type:"dropoff", label:"Futures Explored Film & Media",       address:"2533 R St Ste 120, Sacramento CA 95816",                         time:"9:30 AM", clients:["Kumler, Joshua"], dropoff:true },
+      { id:"r1a6", type:"base",    label:"Base",                                address:"10375 Live Oak Ave., Galt CA 95632",                             time:"",        clients:[], dropoff:false },
     ],
-    amMiles: 134.5, pmMiles: 116,
-    clients: [
-      { name: "Anthony Stayner", address: "10326 Machico Way, Elk Grove CA", uci: "8215001", active: true, status: "active", dayProgram: "PCS", dropoffAddress: "4155 N. El Dorado St., Stockton CA" },
-      { name: "George Orin", address: "10326 Machico Way, Elk Grove CA", uci: "8215002", active: true, status: "active", dayProgram: "PCS", dropoffAddress: "4155 N. El Dorado St., Stockton CA" },
-      { name: "Alex Gomez", address: "618 Union St., Isleton CA", uci: "8215348", active: true, status: "active", dayProgram: "Galt Act", dropoffAddress: "1067 C Street Ste 116, Galt CA" },
-      { name: "Pablo Tinoco", address: "746 Elk Hills Dr., Galt CA", uci: "8215003", active: true, status: "active", dayProgram: "Galt Act", dropoffAddress: "1067 C Street Ste 116, Galt CA" },
-      { name: "Shon Teel", address: "9812 Harvey Road, Galt CA 95632", uci: "8215004", active: true, status: "active", dayProgram: "CVTC", dropoffAddress: "7209 Tam O'Shanter Dr., Stockton CA" },
-      { name: "Glen Wells", address: "9812 Harvey Road, Galt CA 95632", uci: "8215005", active: true, status: "active", dayProgram: "CVTC", dropoffAddress: "7209 Tam O'Shanter Dr., Stockton CA" },
-    ]
+    pmStops:[
+      { id:"r1p1", type:"base",    label:"Base",                                address:"10375 Live Oak Ave., Galt CA 95632",                             time:"1:40 PM", clients:[], dropoff:false },
+      { id:"r1p2", type:"pickup",  label:"Milieu Center — Pick Up Ashley",      address:"3951 Performance Dr., Sacramento CA 95826",                      time:"2:25 PM", clients:["Butterfield, Ashley"], dropoff:false },
+      { id:"r1p3", type:"pickup",  label:"Futures Explored — Pick Up Joshua",   address:"2533 R St Ste 120, Sacramento CA 95816",                         time:"",        clients:["Kumler, Joshua"], dropoff:false },
+      { id:"r1p4", type:"dropoff", label:"Drop Off — Joshua Kumler",            address:"2035 Ready Dr., Woodland CA 95776",                              time:"",        clients:["Kumler, Joshua"], dropoff:true },
+      { id:"r1p5", type:"dropoff", label:"Drop Off — Ashley Butterfield",       address:"11682 County Rd 97, Woodland CA",                                time:"",        clients:["Butterfield, Ashley"], dropoff:true },
+      { id:"r1p6", type:"base",    label:"Base",                                address:"10375 Live Oak Ave., Galt CA 95632",                             time:"",        clients:[], dropoff:false },
+    ],
   },
+
+  // ROUTE 2 — Driver: Laura (addresses TBD — to be filled via admin)
   {
-    id: "r2", name: "Route 2", driver: "Laura", vehicleId: "Khan 2",
-    amStops: [
-      { id: "r2a1", type: "base", label: "Base", address: BASE_ADDRESS, time: "6:30 AM", clients: [] },
-      { id: "r2a2", type: "pickup", address: "Schneible Residence", time: "", clients: ["Bobby Schneible"] },
-      { id: "r2a3", type: "pickup", address: "Jones Residence", time: "", clients: ["Samuel Jones"] },
-      { id: "r2a4", type: "pickup", address: "Dhillon Residence", time: "", clients: ["Paramvir Dhillon"] },
-      { id: "r2a5", type: "pickup", address: "Miller Residence", time: "", clients: ["Brandon Miller"] },
-      { id: "r2a6", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    id:"r2", name:"Route 2", driver:"Laura", vehicleId:"Khan 2",
+    amMiles:93.2, pmMiles:95.2,
+    clients:[
+      { name:"Schneible, Bobby",  address:"", dayProgram:"", dropoffAddress:"", uci:"",        active:true, status:"active", pickupTime:"", dropoffTime:"" },
+      { name:"Jones, Samuel",     address:"", dayProgram:"", dropoffAddress:"", uci:"6462820", active:true, status:"active", pickupTime:"", dropoffTime:"" },
+      { name:"Dhillon, Paramvir", address:"", dayProgram:"", dropoffAddress:"", uci:"",        active:true, status:"active", pickupTime:"", dropoffTime:"" },
+      { name:"Miller, Brandon",   address:"", dayProgram:"", dropoffAddress:"", uci:"",        active:true, status:"active", pickupTime:"", dropoffTime:"" },
     ],
-    pmStops: [
-      { id: "r2p1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r2p2", type: "dropoff", address: "Miller Residence", time: "", clients: ["Brandon Miller"], dropoff: true },
-      { id: "r2p3", type: "dropoff", address: "Dhillon Residence", time: "", clients: ["Paramvir Dhillon"], dropoff: true },
-      { id: "r2p4", type: "dropoff", address: "Jones Residence", time: "", clients: ["Samuel Jones"], dropoff: true },
-      { id: "r2p5", type: "dropoff", address: "Schneible Residence", time: "", clients: ["Bobby Schneible"], dropoff: true },
-      { id: "r2p6", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    amStops:[
+      { id:"r2a1", type:"base", label:"Base", address:"10375 Live Oak Ave., Galt CA 95632", time:"", clients:[], dropoff:false },
+      { id:"r2a2", type:"base", label:"Base", address:"10375 Live Oak Ave., Galt CA 95632", time:"", clients:[], dropoff:false },
     ],
-    amMiles: 93.2, pmMiles: 95.2,
-    clients: [
-      { name: "Bobby Schneible", address: "Schneible Residence", uci: "6462001", active: true, status: "active" },
-      { name: "Samuel Jones", address: "Jones Residence", uci: "6462820", active: true, status: "active" },
-      { name: "Paramvir Dhillon", address: "Dhillon Residence", uci: "6465808", active: true, status: "active" },
-      { name: "Brandon Miller", address: "Miller Residence", uci: "6462002", active: true, status: "active" },
-    ]
+    pmStops:[
+      { id:"r2p1", type:"base", label:"Base", address:"10375 Live Oak Ave., Galt CA 95632", time:"", clients:[], dropoff:false },
+      { id:"r2p2", type:"base", label:"Base", address:"10375 Live Oak Ave., Galt CA 95632", time:"", clients:[], dropoff:false },
+    ],
   },
+
+  // ROUTE 3 — Driver: Dyllon (Source: Logs p.14-15, 3/13/26)
   {
-    id: "r3", name: "Route 3", driver: "Dyllon", vehicleId: "Khan 3",
-    amStops: [
-      { id: "r3a1", type: "base", label: "Base", address: BASE_ADDRESS, time: "6:25 AM", clients: [] },
-      { id: "r3a2", type: "pickup", address: "Butterfield Residence", time: "", clients: ["Ashley Butterfield"] },
-      { id: "r3a3", type: "pickup", address: "Kumler Residence", time: "", clients: ["Joshua Kumler"] },
-      { id: "r3a4", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    id:"r3", name:"Route 3", driver:"Dyllon", vehicleId:"Khan 3",
+    amMiles:134.5, pmMiles:78,
+    clients:[
+      { name:"Stayner, Anthony", address:"10326 Machico Way, Elk Grove CA",
+        dayProgram:"PCS", dropoffAddress:"4155 N. El Dorado St., Stockton CA",
+        uci:"1909407", active:true, status:"active", pickupTime:"7:00 AM", dropoffTime:"8:00 AM" },
+      { name:"Orin, George",     address:"10326 Machico Way, Elk Grove CA",
+        dayProgram:"PCS", dropoffAddress:"4155 N. El Dorado St., Stockton CA",
+        uci:"6411536", active:true, status:"active", pickupTime:"7:00 AM", dropoffTime:"8:00 AM" },
+      { name:"Gomez, Alex",      address:"618 Union St., Isleton CA",
+        dayProgram:"Galt Act", dropoffAddress:"1067 C Street Ste 116, Galt CA",
+        uci:"8215348", active:true, status:"active", pickupTime:"", dropoffTime:"8:45 AM" },
+      { name:"Tinoco, Pablo",    address:"746 Elk Hills Dr., Galt CA",
+        dayProgram:"Galt Act", dropoffAddress:"1067 C Street Ste 116, Galt CA",
+        uci:"", active:true, status:"active", pickupTime:"", dropoffTime:"8:45 AM" },
+      { name:"Teel, Shon",       address:"9812 Harvey Road, Galt CA 95632",
+        dayProgram:"CVTC", dropoffAddress:"7209 Tam O'Shanter Dr., Stockton CA",
+        uci:"6403307", active:true, status:"active", pickupTime:"", dropoffTime:"9:15 AM" },
+      { name:"Wells, Glen",      address:"9812 Harvey Road, Galt CA 95632",
+        dayProgram:"CVTC", dropoffAddress:"7209 Tam O'Shanter Dr., Stockton CA",
+        uci:"6403196", active:true, status:"active", pickupTime:"", dropoffTime:"9:15 AM" },
     ],
-    pmStops: [
-      { id: "r3p1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r3p2", type: "dropoff", address: "Kumler Residence", time: "", clients: ["Joshua Kumler"], dropoff: true },
-      { id: "r3p3", type: "dropoff", address: "Butterfield Residence", time: "", clients: ["Ashley Butterfield"], dropoff: true },
-      { id: "r3p4", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    amStops:[
+      { id:"r3a1", type:"base",    label:"Base",                                  address:"10375 Live Oak Ave., Galt CA 95632",                           time:"6:25 AM", clients:[], dropoff:false },
+      { id:"r3a2", type:"pickup",  label:"Pickup — Anthony Stayner",              address:"10326 Machico Way, Elk Grove CA",                              time:"7:00 AM", clients:["Stayner, Anthony"], dropoff:false },
+      { id:"r3a3", type:"pickup",  label:"Pickup — George Orin",                  address:"10326 Machico Way, Elk Grove CA",                              time:"7:00 AM", clients:["Orin, George"], dropoff:false },
+      { id:"r3a4", type:"pickup",  label:"Pickup — Alex Gomez",                   address:"618 Union St., Isleton CA",                                    time:"",        clients:["Gomez, Alex"], dropoff:false },
+      { id:"r3a5", type:"dropoff", label:"PCS — Drop Off Anthony & George",       address:"4155 N. El Dorado St., Stockton CA",                           time:"8:00 AM", clients:["Stayner, Anthony","Orin, George"], dropoff:true },
+      { id:"r3a6", type:"pickup",  label:"Pickup — Pablo Tinoco",                 address:"746 Elk Hills Dr., Galt CA",                                   time:"",        clients:["Tinoco, Pablo"], dropoff:false },
+      { id:"r3a7", type:"dropoff", label:"Galt Act — Drop Off Alex & Pablo",      address:"1067 C Street Ste 116, Galt CA",                               time:"8:45 AM", clients:["Gomez, Alex","Tinoco, Pablo"], dropoff:true },
+      { id:"r3a8", type:"pickup",  label:"Pickup — Shon Teel",                    address:"9812 Harvey Road, Galt CA 95632",                              time:"",        clients:["Teel, Shon"], dropoff:false },
+      { id:"r3a9", type:"pickup",  label:"Pickup — Glen Wells",                   address:"9812 Harvey Road, Galt CA 95632",                              time:"",        clients:["Wells, Glen"], dropoff:false },
+      { id:"r3a10",type:"dropoff", label:"CVTC — Drop Off Shon & Glen",           address:"7209 Tam O'Shanter Dr., Stockton CA",                          time:"9:15 AM", clients:["Teel, Shon","Wells, Glen"], dropoff:true },
+      { id:"r3a11",type:"base",    label:"Base",                                  address:"10375 Live Oak Ave., Galt CA 95632",                           time:"",        clients:[], dropoff:false },
     ],
-    amMiles: 114, pmMiles: 114,
-    clients: [
-      { name: "Ashley Butterfield", address: "Butterfield Residence", uci: "7191345", active: true, status: "active" },
-      { name: "Joshua Kumler", address: "Kumler Residence", uci: "6462003", active: true, status: "active" },
-    ]
+    pmStops:[
+      { id:"r3p1",  type:"base",    label:"Base",                                 address:"10375 Live Oak Ave., Galt CA 95632",                           time:"1:00 PM", clients:[], dropoff:false },
+      { id:"r3p2",  type:"pickup",  label:"CVTC — Pick Up Shon Teel",             address:"7209 Tam O'Shanter Dr., Stockton CA",                          time:"1:15 PM", clients:["Teel, Shon"], dropoff:false },
+      { id:"r3p3",  type:"pickup",  label:"CVTC — Pick Up Glen Wells",            address:"7209 Tam O'Shanter Dr., Stockton CA",                          time:"1:15 PM", clients:["Wells, Glen"], dropoff:false },
+      { id:"r3p4",  type:"pickup",  label:"PCS — Pick Up Anthony Stayner",        address:"4155 N. El Dorado St., Stockton CA",                           time:"1:30 PM", clients:["Stayner, Anthony"], dropoff:false },
+      { id:"r3p5",  type:"pickup",  label:"PCS — Pick Up George Orin",            address:"4155 N. El Dorado St., Stockton CA",                           time:"1:30 PM", clients:["Orin, George"], dropoff:false },
+      { id:"r3p6",  type:"dropoff", label:"Drop Off — Shon Teel",                 address:"9812 Harvey Road, Galt CA 95632",                              time:"",        clients:["Teel, Shon"], dropoff:true },
+      { id:"r3p7",  type:"dropoff", label:"Drop Off — Glen Wells",                address:"9812 Harvey Road, Galt CA 95632",                              time:"",        clients:["Wells, Glen"], dropoff:true },
+      { id:"r3p8",  type:"pickup",  label:"Galt Act — Pick Up Alex Gomez",        address:"1067 C Street Ste 116, Galt CA",                               time:"",        clients:["Gomez, Alex"], dropoff:false },
+      { id:"r3p9",  type:"pickup",  label:"Galt Act — Pick Up Pablo Tinoco",      address:"1067 C Street Ste 116, Galt CA",                               time:"",        clients:["Tinoco, Pablo"], dropoff:false },
+      { id:"r3p10", type:"dropoff", label:"Drop Off — Anthony Stayner",           address:"10326 Machico Way, Elk Grove CA",                              time:"",        clients:["Stayner, Anthony"], dropoff:true },
+      { id:"r3p11", type:"dropoff", label:"Drop Off — George Orin",               address:"10326 Machico Way, Elk Grove CA",                              time:"",        clients:["Orin, George"], dropoff:true },
+      { id:"r3p12", type:"dropoff", label:"Drop Off — Alex Gomez",                address:"618 Union St., Isleton CA",                                    time:"",        clients:["Gomez, Alex"], dropoff:true },
+      { id:"r3p13", type:"dropoff", label:"Drop Off — Pablo Tinoco",              address:"746 Elk Hills Dr., Galt CA",                                   time:"",        clients:["Tinoco, Pablo"], dropoff:true },
+      { id:"r3p14", type:"base",    label:"Base",                                 address:"10375 Live Oak Ave., Galt CA 95632",                           time:"",        clients:[], dropoff:false },
+    ],
   },
+
+  // ROUTE 4 — Driver: Nizam (Source: Log p.2, 3/13/26)
   {
-    id: "r4", name: "Route 4", driver: "Nizam", vehicleId: "Khan 4",
-    amStops: [
-      { id: "r4a1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r4a2", type: "pickup", address: "Garcia Residence", time: "", clients: ["Garrett Garcia"] },
-      { id: "r4a3", type: "pickup", address: "Perez Residence", time: "", clients: ["Joseph Perez"] },
-      { id: "r4a4", type: "pickup", address: "Verplancken Residence", time: "", clients: ["Connor Verplancken"] },
-      { id: "r4a5", type: "pickup", address: "Wands Residence", time: "", clients: ["Brenden Wands"] },
-      { id: "r4a6", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    id:"r4", name:"Route 4", driver:"Nizam", vehicleId:"Khan 4",
+    amMiles:82.6, pmMiles:69.2,
+    clients:[
+      { name:"Garcia, Garrett",     address:"12717 Hauschildt Rd., Galt CA 95632",
+        dayProgram:"Miliue Center", dropoffAddress:"3951 Performance Dr., Sacramento CA 95838",
+        uci:"6601536", active:true, status:"active", pickupTime:"7:10 AM", dropoffTime:"", schedule:"M-F" },
+      { name:"Perez, Joseph",       address:"9866 Falcon Meadow Dr., Elk Grove CA 95624",
+        dayProgram:"Miliue Center", dropoffAddress:"3951 Performance Dr., Sacramento CA 95838",
+        uci:"7181235", active:true, status:"active", pickupTime:"7:40 AM", dropoffTime:"", schedule:"M-TH" },
+      { name:"Verplancken, Connor", address:"8709 Crystal River Way, Sacramento CA 95828",
+        dayProgram:"Miliue Center", dropoffAddress:"3951 Performance Dr., Sacramento CA 95838",
+        uci:"6469561", active:true, status:"active", pickupTime:"8:00 AM", dropoffTime:"", schedule:"M-F" },
+      { name:"Wands, Brenden",      address:"5347 Presidents Ave N., North Highlands CA 95660",
+        dayProgram:"Miliue Center", dropoffAddress:"3951 Performance Dr., Sacramento CA 95838",
+        uci:"8326569", active:true, status:"active", pickupTime:"8:30 AM", dropoffTime:"", schedule:"M,W,F" },
     ],
-    pmStops: [
-      { id: "r4p1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r4p2", type: "dropoff", address: "Wands Residence", time: "", clients: ["Brenden Wands"], dropoff: true },
-      { id: "r4p3", type: "dropoff", address: "Verplancken Residence", time: "", clients: ["Connor Verplancken"], dropoff: true },
-      { id: "r4p4", type: "dropoff", address: "Perez Residence", time: "", clients: ["Joseph Perez"], dropoff: true },
-      { id: "r4p5", type: "dropoff", address: "Garcia Residence", time: "", clients: ["Garrett Garcia"], dropoff: true },
-      { id: "r4p6", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    amStops:[
+      { id:"r4a1", type:"base",    label:"Base",                                   address:"10375 Live Oak Ave., Galt CA 95632",                          time:"7:10 AM", clients:[], dropoff:false },
+      { id:"r4a2", type:"pickup",  label:"Pickup — Garrett Garcia (M-F)",          address:"12717 Hauschildt Rd., Galt CA 95632",                         time:"7:10 AM", clients:["Garcia, Garrett"], dropoff:false },
+      { id:"r4a3", type:"pickup",  label:"Pickup — Joseph Perez (M-TH)",           address:"9866 Falcon Meadow Dr., Elk Grove CA 95624",                  time:"7:40 AM", clients:["Perez, Joseph"], dropoff:false },
+      { id:"r4a4", type:"pickup",  label:"Pickup — Connor Verplancken (M-F)",      address:"8709 Crystal River Way, Sacramento CA 95828",                 time:"8:00 AM", clients:["Verplancken, Connor"], dropoff:false },
+      { id:"r4a5", type:"pickup",  label:"Pickup — Brenden Wands (M,W,F)",         address:"5347 Presidents Ave N., North Highlands CA 95660",             time:"8:30 AM", clients:["Wands, Brenden"], dropoff:false },
+      { id:"r4a6", type:"dropoff", label:"Miliue Center — Drop Off All",           address:"3951 Performance Dr., Sacramento CA 95838",                    time:"",        clients:["Garcia, Garrett","Perez, Joseph","Verplancken, Connor","Wands, Brenden"], dropoff:true },
+      { id:"r4a7", type:"base",    label:"Base",                                   address:"10375 Live Oak Ave., Galt CA 95632",                          time:"",        clients:[], dropoff:false },
     ],
-    amMiles: 82, pmMiles: 71.2,
-    clients: [
-      { name: "Garrett Garcia", address: "Garcia Residence", uci: "6601536", active: true, status: "active" },
-      { name: "Joseph Perez", address: "Perez Residence", uci: "6601537", active: true, status: "active" },
-      { name: "Connor Verplancken", address: "Verplancken Residence", uci: "6601538", active: true, status: "active" },
-      { name: "Brenden Wands", address: "Wands Residence", uci: "6601539", active: true, status: "active" },
-    ]
+    pmStops:[
+      { id:"r4p1", type:"base",    label:"Base",                                   address:"10375 Live Oak Ave., Galt CA 95632",                          time:"1:40 PM", clients:[], dropoff:false },
+      { id:"r4p2", type:"pickup",  label:"Miliue Center — Pick Up All",            address:"3951 Performance Dr., Sacramento CA 95838",                    time:"2:30 PM", clients:["Garcia, Garrett","Perez, Joseph","Verplancken, Connor","Wands, Brenden"], dropoff:false },
+      { id:"r4p3", type:"dropoff", label:"Drop Off — Brenden Wands",               address:"5347 Presidents Ave N., North Highlands CA 95660",             time:"",        clients:["Wands, Brenden"], dropoff:true },
+      { id:"r4p4", type:"dropoff", label:"Drop Off — Connor Verplancken",          address:"8709 Crystal River Way, Sacramento CA 95828",                 time:"",        clients:["Verplancken, Connor"], dropoff:true },
+      { id:"r4p5", type:"dropoff", label:"Drop Off — Joseph Perez",                address:"9866 Falcon Meadow Dr., Elk Grove CA 95624",                  time:"",        clients:["Perez, Joseph"], dropoff:true },
+      { id:"r4p6", type:"dropoff", label:"Drop Off — Garrett Garcia",              address:"12717 Hauschildt Rd., Galt CA 95632",                         time:"",        clients:["Garcia, Garrett"], dropoff:true },
+      { id:"r4p7", type:"base",    label:"Base",                                   address:"10375 Live Oak Ave., Galt CA 95632",                          time:"",        clients:[], dropoff:false },
+    ],
   },
+
+  // ROUTE 5 — Driver: Brandin (Source: Log p.3, 3/13/26)
   {
-    id: "r5", name: "Route 5", driver: "Brandin", vehicleId: "Khan 5",
-    amStops: [
-      { id: "r5a1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r5a2", type: "pickup", address: "Baylor Residence", time: "", clients: ["Alyvia Baylor"] },
-      { id: "r5a3", type: "pickup", address: "Marubayashi Residence", time: "", clients: ["Elizabeth Marubayashi"] },
-      { id: "r5a4", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    id:"r5", name:"Route 5", driver:"Brandin", vehicleId:"Khan 5",
+    amMiles:121, pmMiles:127,
+    clients:[
+      { name:"Baylor, Alyvia",         address:"407 Niemann St., Winters CA 95694",
+        dayProgram:"Aim & Associates", dropoffAddress:"1925 Branigan Ave, Woodland CA 95776",
+        uci:"6462344", active:true, status:"active", pickupTime:"7:40 AM", dropoffTime:"8:30 AM", schedule:"AB" },
+      { name:"Marubayashi, Elizabeth", address:"28017 W. Grant Ave., Winters CA 95694",
+        dayProgram:"Norcal Excel",     dropoffAddress:"4044 N Freeway Blvd, Sacramento CA 95834",
+        uci:"5168745", active:true, status:"active", pickupTime:"", dropoffTime:"9:00 AM", schedule:"M-TH, EM" },
     ],
-    pmStops: [
-      { id: "r5p1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r5p2", type: "dropoff", address: "Marubayashi Residence", time: "", clients: ["Elizabeth Marubayashi"], dropoff: true },
-      { id: "r5p3", type: "dropoff", address: "Baylor Residence", time: "", clients: ["Alyvia Baylor"], dropoff: true },
-      { id: "r5p4", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    amStops:[
+      { id:"r5a1", type:"base",    label:"Base",                                   address:"10375 Live Oak Ave., Galt CA 95632",                          time:"6:40 AM", clients:[], dropoff:false },
+      { id:"r5a2", type:"pickup",  label:"Pickup — Alyvia Baylor (AB)",            address:"407 Niemann St., Winters CA 95694",                           time:"7:40 AM", clients:["Baylor, Alyvia"], dropoff:false },
+      { id:"r5a3", type:"pickup",  label:"Pickup — Elizabeth Marubayashi (M-TH)", address:"28017 W. Grant Ave., Winters CA 95694",                        time:"",        clients:["Marubayashi, Elizabeth"], dropoff:false },
+      { id:"r5a4", type:"dropoff", label:"Aim & Associates — Drop Off Alyvia",     address:"1925 Branigan Ave, Woodland CA 95776",                         time:"8:30 AM", clients:["Baylor, Alyvia"], dropoff:true },
+      { id:"r5a5", type:"dropoff", label:"Norcal Excel — Drop Off Elizabeth",      address:"4044 N Freeway Blvd, Sacramento CA 95834",                    time:"9:00 AM", clients:["Marubayashi, Elizabeth"], dropoff:true },
+      { id:"r5a6", type:"base",    label:"Base",                                   address:"10375 Live Oak Ave., Galt CA 95632",                          time:"",        clients:[], dropoff:false },
     ],
-    amMiles: 128, pmMiles: 158,
-    clients: [
-      { name: "Alyvia Baylor", address: "Baylor Residence", uci: "6462344", active: true, status: "active" },
-      { name: "Elizabeth Marubayashi", address: "Marubayashi Residence", uci: "6462345", active: true, status: "active" },
-    ]
+    pmStops:[
+      { id:"r5p1", type:"base",    label:"Base",                                   address:"10375 Live Oak Ave., Galt CA 95632",                          time:"1:30 PM", clients:[], dropoff:false },
+      { id:"r5p2", type:"pickup",  label:"Aim & Associates — Pick Up Alyvia",      address:"1925 Branigan Ave, Woodland CA 95776",                         time:"2:30 PM", clients:["Baylor, Alyvia"], dropoff:false },
+      { id:"r5p3", type:"pickup",  label:"Norcal Excel — Pick Up Elizabeth (M-TH)",address:"4044 N Freeway Blvd, Sacramento CA 95834",                    time:"3:00 PM", clients:["Marubayashi, Elizabeth"], dropoff:false },
+      { id:"r5p4", type:"dropoff", label:"Drop Off — Elizabeth Marubayashi",       address:"28017 W. Grant Ave., Winters CA 95694",                        time:"",        clients:["Marubayashi, Elizabeth"], dropoff:true },
+      { id:"r5p5", type:"dropoff", label:"Drop Off — Alyvia Baylor",               address:"407 Niemann St., Winters CA 95694",                           time:"",        clients:["Baylor, Alyvia"], dropoff:true },
+      { id:"r5p6", type:"base",    label:"Base",                                   address:"10375 Live Oak Ave., Galt CA 95632",                          time:"",        clients:[], dropoff:false },
+    ],
   },
+
+  // ROUTE 6 — Driver: Hanif
   {
-    id: "r6", name: "Route 6", driver: "Hanif", vehicleId: "Khan 6",
-    amStops: [
-      { id: "r6a1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r6a2", type: "pickup", address: "Wells Residence", time: "", clients: ["Glen Wells"] },
-      { id: "r6a3", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    id:"r6", name:"Route 6", driver:"Hanif", vehicleId:"Khan 6",
+    amMiles:45.65, pmMiles:45.65,
+    clients:[
+      { name:"Wells, Glen", address:"9812 Harvey Road, Galt CA 95632",
+        dayProgram:"CVTC", dropoffAddress:"7209 Tam O'Shanter Dr., Stockton CA",
+        uci:"6403196", active:true, status:"active", pickupTime:"", dropoffTime:"" },
     ],
-    pmStops: [
-      { id: "r6p1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r6p2", type: "dropoff", address: "Wells Residence", time: "", clients: ["Glen Wells"], dropoff: true },
-      { id: "r6p3", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    amStops:[
+      { id:"r6a1", type:"base",    label:"Base",                address:"10375 Live Oak Ave., Galt CA 95632", time:"", clients:[], dropoff:false },
+      { id:"r6a2", type:"pickup",  label:"Pickup — Glen Wells", address:"9812 Harvey Road, Galt CA 95632",    time:"", clients:["Wells, Glen"], dropoff:false },
+      { id:"r6a3", type:"dropoff", label:"CVTC",                address:"7209 Tam O'Shanter Dr., Stockton CA",time:"", clients:["Wells, Glen"], dropoff:true },
+      { id:"r6a4", type:"base",    label:"Base",                address:"10375 Live Oak Ave., Galt CA 95632", time:"", clients:[], dropoff:false },
     ],
-    amMiles: 45.65, pmMiles: 45.65,
-    clients: [
-      { name: "Glen Wells", address: "Wells Residence", uci: "6462346", active: true, status: "active" },
-    ]
+    pmStops:[
+      { id:"r6p1", type:"base",    label:"Base",                  address:"10375 Live Oak Ave., Galt CA 95632", time:"", clients:[], dropoff:false },
+      { id:"r6p2", type:"pickup",  label:"CVTC — Pick Up Glen",   address:"7209 Tam O'Shanter Dr., Stockton CA",time:"", clients:["Wells, Glen"], dropoff:false },
+      { id:"r6p3", type:"dropoff", label:"Drop Off — Glen Wells", address:"9812 Harvey Road, Galt CA 95632",    time:"", clients:["Wells, Glen"], dropoff:true },
+      { id:"r6p4", type:"base",    label:"Base",                  address:"10375 Live Oak Ave., Galt CA 95632", time:"", clients:[], dropoff:false },
+    ],
   },
+
+  // ROUTE 7 — Driver: Virginia (Source: Logs p.4-8, 3/9-3/13/26)
   {
-    id: "r7", name: "Route 7", driver: "Virginia", vehicleId: "Khan 7", amMiles: 93.9, pmMiles: 95.6,
-    amStops: [
-      { id: "r7a1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r7a2", type: "pickup", address: "Client Pickup", time: "", clients: ["Jesh Kumar"] },
-      { id: "r7a3", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    id:"r7", name:"Route 7", driver:"Virginia", vehicleId:"Khan 7",
+    amMiles:94.9, pmMiles:95.6,
+    clients:[
+      { name:"Serrato, Jonathan",  address:"4350 Galbrath Dr., Sacramento CA 95842",
+        dayProgram:"PRIDE Veritiv", dropoffAddress:"3510 Carlin Dr., West Sacramento CA 95691",
+        uci:"6469328", active:true, status:"active", pickupTime:"6:50 AM", dropoffTime:"3:20 PM",
+        schedule:"M-F", notes:"Gate Code: 9162" },
+      { name:"Majors, Timothy",    address:"7017 Mountainside Dr., Citrus Heights CA 95621",
+        dayProgram:"PRIDE Veritiv", dropoffAddress:"3510 Carlin Dr., West Sacramento CA 95691",
+        uci:"7722520", active:true, status:"active", pickupTime:"7:06 AM", dropoffTime:"3:20 PM", schedule:"M-F" },
+      { name:"Sherrard, Jennifer", address:"7505 Sunset Ave Apt B, Fair Oaks CA 95628",
+        dayProgram:"PRIDE Veritiv", dropoffAddress:"3510 Carlin Dr., West Sacramento CA 95691",
+        uci:"5234919", active:true, status:"active", pickupTime:"7:30 AM", dropoffTime:"3:20 PM", schedule:"M,T,TH,F" },
+      { name:"Craig, Stefon",      address:"2432 Camino Park Ct., Carmichael CA 95608",
+        dayProgram:"PRIDE Veritiv", dropoffAddress:"3510 Carlin Dr., West Sacramento CA 95691",
+        uci:"6492828", active:true, status:"active", pickupTime:"7:40 AM", dropoffTime:"3:20 PM", schedule:"W,TH,F" },
     ],
-    pmStops: [
-      { id: "r7p1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r7p2", type: "dropoff", address: "Client Dropoff", time: "", clients: ["Jesh Kumar"], dropoff: true },
-      { id: "r7p3", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    amStops:[
+      { id:"r7a1", type:"base",    label:"Base",                                        address:"10375 Live Oak Ave., Galt CA 95632",                      time:"6:20 AM", clients:[], dropoff:false },
+      { id:"r7a2", type:"pickup",  label:"Pickup — Jonathan Serrato (M-F) GATE: 9162", address:"4350 Galbrath Dr., Sacramento CA 95842",                  time:"6:50 AM", clients:["Serrato, Jonathan"], dropoff:false },
+      { id:"r7a3", type:"pickup",  label:"Pickup — Timothy Majors (M-F)",               address:"7017 Mountainside Dr., Citrus Heights CA 95621",           time:"7:06 AM", clients:["Majors, Timothy"], dropoff:false },
+      { id:"r7a4", type:"pickup",  label:"Pickup — Jennifer Sherrard (M,T,TH,F)",      address:"7505 Sunset Ave Apt B, Fair Oaks CA 95628",                time:"7:30 AM", clients:["Sherrard, Jennifer"], dropoff:false },
+      { id:"r7a5", type:"pickup",  label:"Pickup — Stefon Craig (W,TH,F)",             address:"2432 Camino Park Ct., Carmichael CA 95608",                time:"7:40 AM", clients:["Craig, Stefon"], dropoff:false },
+      { id:"r7a6", type:"dropoff", label:"PRIDE Veritiv — Drop Off All",                address:"3510 Carlin Dr., West Sacramento CA 95691",                time:"",        clients:["Serrato, Jonathan","Majors, Timothy","Sherrard, Jennifer","Craig, Stefon"], dropoff:true },
+      { id:"r7a7", type:"base",    label:"Base",                                        address:"10375 Live Oak Ave., Galt CA 95632",                      time:"",        clients:[], dropoff:false },
     ],
-    clients: [{ name: "Jesh Kumar", address: "Kumar Residence", uci: "6432542", active: true, status: "active" }]
+    pmStops:[
+      { id:"r7p1", type:"base",    label:"Base",                                        address:"10375 Live Oak Ave., Galt CA 95632",                      time:"2:40 PM", clients:[], dropoff:false },
+      { id:"r7p2", type:"pickup",  label:"PRIDE Veritiv — Pick Up All",                 address:"3510 Carlin Dr., West Sacramento CA 95691",                time:"3:20 PM", clients:["Serrato, Jonathan","Majors, Timothy","Sherrard, Jennifer","Craig, Stefon"], dropoff:false },
+      { id:"r7p3", type:"dropoff", label:"Drop Off — Stefon Craig",                     address:"2432 Camino Park Ct., Carmichael CA 95608",                time:"",        clients:["Craig, Stefon"], dropoff:true },
+      { id:"r7p4", type:"dropoff", label:"Drop Off — Jennifer Sherrard",                address:"7505 Sunset Ave Apt B, Fair Oaks CA 95628",                time:"",        clients:["Sherrard, Jennifer"], dropoff:true },
+      { id:"r7p5", type:"dropoff", label:"Drop Off — Timothy Majors",                   address:"7017 Mountainside Dr., Citrus Heights CA 95621",           time:"",        clients:["Majors, Timothy"], dropoff:true },
+      { id:"r7p6", type:"dropoff", label:"Drop Off — Jonathan Serrato GATE: 9162",      address:"4350 Galbrath Dr., Sacramento CA 95842",                  time:"",        clients:["Serrato, Jonathan"], dropoff:true },
+      { id:"r7p7", type:"base",    label:"Base",                                        address:"10375 Live Oak Ave., Galt CA 95632",                      time:"5:40 PM", clients:[], dropoff:false },
+    ],
   },
+
+  // ROUTE 8 — Driver: Betty (Sources: Logs p.9,13 Nicole/Seth 3/13)
   {
-    id: "r8", name: "Route 8", driver: "Betty", vehicleId: "Khan 8", amMiles: 83.3, pmMiles: 88.4,
-    amStops: [
-      { id: "r8a1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r8a2", type: "pickup", address: "Client Pickup", time: "", clients: ["Timothy Majors"] },
-      { id: "r8a3", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    id:"r8", name:"Route 8", driver:"Betty", vehicleId:"Khan 8",
+    amMiles:83.3, pmMiles:88.4,
+    clients:[
+      { name:"Doose, Logan",     address:"8907 Lismore Dr., Elk Grove CA",
+        dayProgram:"American River College", dropoffAddress:"4700 College Oak Drive, Sacramento CA",
+        uci:"", active:true, status:"active", pickupTime:"7:20 AM", dropoffTime:"8:40 AM", schedule:"WEDNESDAY ONLY" },
+      { name:"Applegate, Chad",  address:"1309 Rene Ave, Sacramento CA 95838",
+        dayProgram:"Family Affair", dropoffAddress:"3132 Auburn Blvd., Sacramento CA 95821",
+        uci:"", active:true, status:"active", pickupTime:"", dropoffTime:"9:00 AM", schedule:"Mon-Thursday" },
+      { name:"Smith, Corey",     address:"5032 Nopal St., Sacramento CA",
+        dayProgram:"Pride Industries", dropoffAddress:"5321 Luce Ave, McClellan Park CA",
+        uci:"", active:true, status:"active", pickupTime:"", dropoffTime:"2:30 PM" },
+      { name:"Flores, Ian",      address:"4615 Sycamore Ave, Sacramento CA",
+        dayProgram:"Pride Industries", dropoffAddress:"5321 Luce Ave, McClellan Park CA",
+        uci:"", active:true, status:"active", pickupTime:"", dropoffTime:"2:30 PM" },
+      { name:"Cameron, Brianna", address:"",
+        dayProgram:"", dropoffAddress:"", uci:"", active:true, status:"active", pickupTime:"", dropoffTime:"" },
     ],
-    pmStops: [
-      { id: "r8p1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r8p2", type: "dropoff", address: "Client Dropoff", time: "", clients: ["Timothy Majors"], dropoff: true },
-      { id: "r8p3", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    amStops:[
+      { id:"r8a1", type:"base",    label:"Base",                                    address:"10375 Live Oak Ave., Galt CA 95632",                        time:"7:05 AM", clients:[], dropoff:false },
+      { id:"r8a2", type:"pickup",  label:"Pickup — Logan Doose (WEDNESDAY ONLY)",  address:"8907 Lismore Dr., Elk Grove CA",                             time:"7:20 AM", clients:["Doose, Logan"], dropoff:false },
+      { id:"r8a3", type:"dropoff", label:"American River College (WEDNESDAY ONLY)",address:"4700 College Oak Drive, Sacramento CA",                      time:"8:40 AM", clients:["Doose, Logan"], dropoff:true },
+      { id:"r8a4", type:"pickup",  label:"Pickup — Chad Applegate (Mon-Thu)",       address:"1309 Rene Ave, Sacramento CA 95838",                         time:"",        clients:["Applegate, Chad"], dropoff:false },
+      { id:"r8a5", type:"dropoff", label:"Family Affair — Drop Off",                address:"3132 Auburn Blvd., Sacramento CA 95821",                      time:"9:00 AM", clients:["Applegate, Chad","Smith, Corey","Flores, Ian"], dropoff:true },
+      { id:"r8a6", type:"base",    label:"Base",                                    address:"10375 Live Oak Ave., Galt CA 95632",                        time:"",        clients:[], dropoff:false },
     ],
-    clients: [{ name: "Timothy Majors", address: "Majors Residence", uci: "6432543", active: true, status: "active" }]
+    pmStops:[
+      { id:"r8p1", type:"base",    label:"Base",                                    address:"10375 Live Oak Ave., Galt CA 95632",                        time:"12:15 PM",clients:[], dropoff:false },
+      { id:"r8p2", type:"pickup",  label:"Family Affair — Pick Up",                 address:"3132 Auburn Blvd., Sacramento CA 95821",                      time:"1:00 PM", clients:["Applegate, Chad","Smith, Corey","Flores, Ian"], dropoff:false },
+      { id:"r8p3", type:"dropoff", label:"Drop Off — Chad Applegate",               address:"1309 Rene Ave, Sacramento CA 95838",                         time:"",        clients:["Applegate, Chad"], dropoff:true },
+      { id:"r8p4", type:"dropoff", label:"Pride Industries — Drop Off",             address:"5321 Luce Ave, McClellan Park CA",                            time:"2:30 PM", clients:["Smith, Corey","Flores, Ian"], dropoff:true },
+      { id:"r8p5", type:"dropoff", label:"Drop Off — Corey Smith",                  address:"5032 Nopal St., Sacramento CA",                               time:"",        clients:["Smith, Corey"], dropoff:true },
+      { id:"r8p6", type:"dropoff", label:"Drop Off — Ian Flores",                   address:"4615 Sycamore Ave, Sacramento CA",                            time:"",        clients:["Flores, Ian"], dropoff:true },
+      { id:"r8p7", type:"base",    label:"Base",                                    address:"10375 Live Oak Ave., Galt CA 95632",                        time:"",        clients:[], dropoff:false },
+    ],
   },
+
+  // ROUTE 9 — Driver: Nizam (Source: Log p.10, Nicole A, 3/13/26)
   {
-    id: "r9", name: "Route 9", driver: "Driver 9", vehicleId: "Khan 9", amMiles: 48, pmMiles: 48,
-    amStops: [
-      { id: "r9a1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r9a2", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    id:"r9", name:"Route 9", driver:"Nizam", vehicleId:"Khan 9",
+    amMiles:48, pmMiles:48,
+    clients:[
+      { name:"Chavez, Matthew", address:"805 Taft Way, Galt CA 95632",
+        dayProgram:"Franchise Tax Board", dropoffAddress:"9646 Butterfield Way, Sacramento CA 95827",
+        uci:"", active:true, status:"active", pickupTime:"", dropoffTime:"7:50 AM" },
+      { name:"Kumar, Jesh",     address:"8243 Crichton Way, Elk Grove CA 95758",
+        dayProgram:"Futures Explored", dropoffAddress:"2533 R St. Suite 120, Sacramento CA 95816",
+        uci:"", active:true, status:"active", pickupTime:"", dropoffTime:"9:00 AM" },
     ],
-    pmStops: [
-      { id: "r9p1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r9p2", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    amStops:[
+      { id:"r9a1", type:"base",    label:"Base",                                     address:"10375 Live Oak Ave., Galt CA 95632",                       time:"6:50 AM", clients:[], dropoff:false },
+      { id:"r9a2", type:"pickup",  label:"Pickup — Matthew Chavez",                  address:"805 Taft Way, Galt CA 95632",                               time:"",        clients:["Chavez, Matthew"], dropoff:false },
+      { id:"r9a3", type:"dropoff", label:"Franchise Tax Board — Drop Off Matthew",   address:"9646 Butterfield Way, Sacramento CA 95827",                 time:"7:50 AM", clients:["Chavez, Matthew"], dropoff:true },
+      { id:"r9a4", type:"pickup",  label:"Pickup — Jesh Kumar",                      address:"8243 Crichton Way, Elk Grove CA 95758",                     time:"",        clients:["Kumar, Jesh"], dropoff:false },
+      { id:"r9a5", type:"dropoff", label:"Futures Explored — Drop Off Jesh",         address:"2533 R St. Suite 120, Sacramento CA 95816",                 time:"9:00 AM", clients:["Kumar, Jesh"], dropoff:true },
+      { id:"r9a6", type:"base",    label:"Base",                                     address:"10375 Live Oak Ave., Galt CA 95632",                       time:"",        clients:[], dropoff:false },
     ],
-    clients: []
+    pmStops:[
+      { id:"r9p1", type:"base",    label:"Base",                                     address:"10375 Live Oak Ave., Galt CA 95632",                       time:"2:30 PM", clients:[], dropoff:false },
+      { id:"r9p2", type:"pickup",  label:"Futures Explored — Pick Up Jesh",          address:"2533 R St. Suite 120, Sacramento CA 95816",                 time:"3:00 PM", clients:["Kumar, Jesh"], dropoff:false },
+      { id:"r9p3", type:"dropoff", label:"Drop Off — Jesh Kumar",                    address:"8243 Crichton Way, Elk Grove CA 95758",                     time:"",        clients:["Kumar, Jesh"], dropoff:true },
+      { id:"r9p4", type:"pickup",  label:"Franchise Tax Board — Pick Up Matthew",    address:"9646 Butterfield Way, Sacramento CA 95827",                 time:"5:00 PM", clients:["Chavez, Matthew"], dropoff:false },
+      { id:"r9p5", type:"dropoff", label:"Drop Off — Matthew Chavez",                address:"805 Taft Way, Galt CA 95632",                               time:"",        clients:["Chavez, Matthew"], dropoff:true },
+      { id:"r9p6", type:"base",    label:"Base",                                     address:"10375 Live Oak Ave., Galt CA 95632",                       time:"",        clients:[], dropoff:false },
+    ],
   },
+
+  // ROUTE 10 — Driver: Betty (Sources: Logs p.11-12, Nancy/Betty 3/13 & 3/16)
   {
-    id: "r10", name: "Route 10", driver: "Driver 10", vehicleId: "Khan 10", amMiles: 58, pmMiles: 58,
-    amStops: [
-      { id: "r10a1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r10a2", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    id:"r10", name:"Route 10", driver:"Betty", vehicleId:"Khan 10",
+    amMiles:63, pmMiles:66.9,
+    clients:[
+      { name:"Muyco, Sue",      address:"7116 Elder Creek Rd., Sacramento CA",
+        dayProgram:"Family Affair", dropoffAddress:"3525 Broadway, Sacramento CA",
+        uci:"", active:true, status:"active", pickupTime:"8:15 AM", dropoffTime:"9:00 AM" },
+      { name:"Maiefski, Paul",  address:"10108 Monte Vallo Crt., Ranch Cordova CA",
+        dayProgram:"Family Affair", dropoffAddress:"3525 Broadway, Sacramento CA",
+        uci:"", active:true, status:"active", pickupTime:"8:35 AM", dropoffTime:"9:00 AM" },
+      { name:"Goodwin, James",  address:"10108 Monte Vallo Crt., Ranch Cordova CA",
+        dayProgram:"Family Affair", dropoffAddress:"3525 Broadway, Sacramento CA",
+        uci:"", active:true, status:"active", pickupTime:"8:35 AM", dropoffTime:"9:00 AM" },
+      { name:"Gonzales, Gary",  address:"10108 Monte Vallo Crt., Ranch Cordova CA",
+        dayProgram:"Family Affair", dropoffAddress:"3525 Broadway, Sacramento CA",
+        uci:"", active:true, status:"active", pickupTime:"8:35 AM", dropoffTime:"9:00 AM" },
+      { name:"Doose, Logan",    address:"8907 Lismore Dr., Elk Grove CA",
+        dayProgram:"American River College", dropoffAddress:"4700 College Oaks Dr., Sacramento CA",
+        uci:"", active:true, status:"active", pickupTime:"", dropoffTime:"3:30 PM", schedule:"WEDNESDAY ONLY" },
     ],
-    pmStops: [
-      { id: "r10p1", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
-      { id: "r10p2", type: "base", label: "Base", address: BASE_ADDRESS, time: "", clients: [] },
+    amStops:[
+      { id:"r10a1", type:"base",    label:"Base",                            address:"10375 Live Oak Ave., Galt CA 95632",                       time:"7:30 AM", clients:[], dropoff:false },
+      { id:"r10a2", type:"pickup",  label:"Pickup — Sue Muyco",              address:"7116 Elder Creek Rd., Sacramento CA",                       time:"8:15 AM", clients:["Muyco, Sue"], dropoff:false },
+      { id:"r10a3", type:"pickup",  label:"Pickup — Paul Maiefski",          address:"10108 Monte Vallo Crt., Ranch Cordova CA",                  time:"8:35 AM", clients:["Maiefski, Paul"], dropoff:false },
+      { id:"r10a4", type:"pickup",  label:"Pickup — James Goodwin",          address:"10108 Monte Vallo Crt., Ranch Cordova CA",                  time:"8:35 AM", clients:["Goodwin, James"], dropoff:false },
+      { id:"r10a5", type:"pickup",  label:"Pickup — Gary Gonzales",          address:"10108 Monte Vallo Crt., Ranch Cordova CA",                  time:"8:35 AM", clients:["Gonzales, Gary"], dropoff:false },
+      { id:"r10a6", type:"dropoff", label:"Family Affair — Drop Off All",    address:"3525 Broadway, Sacramento CA",                              time:"9:00 AM", clients:["Muyco, Sue","Maiefski, Paul","Goodwin, James","Gonzales, Gary"], dropoff:true },
+      { id:"r10a7", type:"base",    label:"Base",                            address:"10375 Live Oak Ave., Galt CA 95632",                       time:"",        clients:[], dropoff:false },
     ],
-    clients: []
+    pmStops:[
+      { id:"r10p1", type:"base",    label:"Base",                            address:"10375 Live Oak Ave., Galt CA 95632",                       time:"1:15 PM", clients:[], dropoff:false },
+      { id:"r10p2", type:"pickup",  label:"Family Affair — Pick Up All",     address:"3525 Broadway, Sacramento CA",                              time:"1:45 PM", clients:["Muyco, Sue","Maiefski, Paul","Goodwin, James","Gonzales, Gary"], dropoff:false },
+      { id:"r10p3", type:"dropoff", label:"Drop Off — Paul Maiefski",        address:"10108 Monte Vallo Crt., Ranch Cordova CA",                  time:"",        clients:["Maiefski, Paul"], dropoff:true },
+      { id:"r10p4", type:"dropoff", label:"Drop Off — James Goodwin",        address:"10108 Monte Vallo Crt., Ranch Cordova CA",                  time:"",        clients:["Goodwin, James"], dropoff:true },
+      { id:"r10p5", type:"dropoff", label:"Drop Off — Gary Gonzales",        address:"10108 Monte Vallo Crt., Ranch Cordova CA",                  time:"",        clients:["Gonzales, Gary"], dropoff:true },
+      { id:"r10p6", type:"dropoff", label:"Drop Off — Sue Muyco",            address:"7116 Elder Creek Rd., Sacramento CA",                       time:"",        clients:["Muyco, Sue"], dropoff:true },
+      { id:"r10p7", type:"pickup",  label:"American River College — Pick Up Logan (WED ONLY)", address:"4700 College Oaks Dr., Sacramento CA",    time:"3:30 PM", clients:["Doose, Logan"], dropoff:false },
+      { id:"r10p8", type:"dropoff", label:"Drop Off — Logan Doose (WED ONLY)",address:"8907 Lismore Dr., Elk Grove CA",                          time:"",        clients:["Doose, Logan"], dropoff:true },
+      { id:"r10p9", type:"base",    label:"Base",                            address:"10375 Live Oak Ave., Galt CA 95632",                       time:"",        clients:[], dropoff:false },
+    ],
   },
+
 ];
 
 const INSPECTION_ITEMS = [
