@@ -965,7 +965,18 @@ const MapsLink = ({ address, label }) => {
 };
 
 // ============ DRIVER DASHBOARD ============
-const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
+const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete, absences = [], vehicleServices = [] }) => {
+  // Build today's date string for absence checking
+  const todayDateStr = new Date().toISOString().slice(0, 10);
+
+  // Returns true if a client is marked absent today via the calendar
+  const isCalendarAbsent = (clientName) => {
+    return absences.some(a =>
+      a.clientName === clientName &&
+      todayDateStr >= a.startDate &&
+      todayDateStr <= (a.endDate || a.startDate)
+    );
+  };
   const isManager = user.role === "manager";
   const [selectedRouteId, setSelectedRouteId] = useState(null);
   const [overrideName, setOverrideName] = useState("");
@@ -1001,6 +1012,9 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
   const [flashInspection, setFlashInspection] = useState(false);
   const [amSignature, setAmSignature] = useState(null);
   const [pmSignature, setPmSignature] = useState(null);
+  const [showTimeOffForm, setShowTimeOffForm] = useState(false);
+  const [driverTOForm, setDriverTOForm] = useState({ startDate:"", endDate:"", reason:"" });
+  const [inspectionOverride, setInspectionOverride] = useState(false); // driver overrode inspection gate
 
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
@@ -1058,9 +1072,10 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
   const activeStops = stops.filter(s => {
     if (s.type === "base") return true;
     if (s.inactive) return false;
+    // A stop is active if at least one client is active AND not calendar-absent AND not called-out
     return s.clients.some(c => {
       const cl = driverRoute.clients.find(x => x.name === c);
-      return cl && cl.active;
+      return cl && cl.active && !isCalendarAbsent(c) && !calledOut[c];
     });
   });
 
@@ -1098,7 +1113,9 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
   };
 
   // Get all unique active clients for the route (exclude called-out)
-  const allActiveClients = driverRoute.clients.filter(c => c.active);
+  // Participants marked absent via calendar today (auto-removed from route)
+  const calendarAbsentToday = driverRoute.clients.filter(c => c.active && isCalendarAbsent(c.name));
+  const allActiveClients = driverRoute.clients.filter(c => c.active && !isCalendarAbsent(c.name));
   const routingClients = allActiveClients.filter(c => !calledOut[c.name]); // on-route clients
 
   const handleSubmitAM = () => {
@@ -1133,6 +1150,78 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
   // Render the route log
   const renderLog = () => (
     <div>
+      {/* Vehicle Service Alerts — view only for drivers */}
+      {(() => {
+        const todayStr = new Date().toISOString().slice(0,10);
+        const driverVehicleId = driverRoute?.id;
+        const urgentAlerts = vehicleServices.filter(s =>
+          s.serviceType === 'reminder' &&
+          (s.vehicleId === driverVehicleId) &&
+          (s.urgent || (s.nextDueDate && s.nextDueDate <= todayStr))
+        );
+        const upcomingAlerts = vehicleServices.filter(s => {
+          if (s.serviceType !== 'reminder') return false;
+          if (s.vehicleId !== driverVehicleId) return false;
+          if (!s.nextDueDate) return false;
+          const diff = (new Date(s.nextDueDate) - new Date()) / (1000*60*60*24);
+          return diff > 0 && diff <= 14 && !s.urgent;
+        });
+        if (urgentAlerts.length === 0 && upcomingAlerts.length === 0) return null;
+        return (
+          <>
+            {urgentAlerts.map(a => (
+              <div key={a.id} style={{ background:a.urgent?"#fef2f2":"#fffbeb",
+                border:`2px solid ${a.urgent?COLORS.red:COLORS.yellow}`, borderRadius:10,
+                padding:"10px 14px", marginBottom:10 }}>
+                <p style={{ color:a.urgent?COLORS.red:"#92400e", fontSize:13, fontWeight:800, margin:"0 0 3px" }}>
+                  {a.urgent ? "🚨 URGENT Service Required" : "⚠️ Service Due Soon"}
+                </p>
+                <p style={{ color:a.urgent?"#7f1d1d":"#78350f", fontSize:12, margin:0 }}>
+                  {a.type} — {driverRoute.vehicleId}
+                  {a.nextDueDate ? ` · Due: ${a.nextDueDate}` : ""}
+                  {a.nextDueMiles ? ` or ${a.nextDueMiles} mi` : ""}
+                </p>
+                {a.notes && <p style={{ color:COLORS.textMuted, fontSize:11, margin:"3px 0 0", fontStyle:"italic" }}>{a.notes}</p>}
+                <p style={{ color:COLORS.textMuted, fontSize:10, margin:"4px 0 0" }}>ℹ️ Contact your manager — view only</p>
+              </div>
+            ))}
+            {upcomingAlerts.map(a => (
+              <div key={a.id} style={{ background:"#fffbeb", border:`1px solid ${COLORS.yellow}`,
+                borderRadius:8, padding:"8px 12px", marginBottom:8 }}>
+                <p style={{ color:"#92400e", fontSize:12, fontWeight:700, margin:"0 0 2px" }}>
+                  ⚠️ {a.type} due soon — {driverRoute.vehicleId}
+                </p>
+                <p style={{ color:"#78350f", fontSize:11, margin:0 }}>
+                  Due: {a.nextDueDate}{a.nextDueMiles ? ` or ${a.nextDueMiles} mi` : ""}
+                </p>
+              </div>
+            ))}
+          </>
+        );
+      })()}
+      {/* Calendar Absence Banner — auto-removed participants */}
+      {calendarAbsentToday.length > 0 && (
+        <div style={{ background:"#fffbeb", border:`1px solid ${COLORS.yellow}`, borderRadius:10,
+          padding:"10px 14px", marginBottom:12 }}>
+          <p style={{ color:"#92400e", fontSize:12, fontWeight:800, margin:"0 0 4px" }}>
+            📅 Pre-Scheduled Absence Today
+          </p>
+          {calendarAbsentToday.map(c => {
+            const absence = absences.find(a =>
+              a.clientName === c.name &&
+              todayDateStr >= a.startDate &&
+              todayDateStr <= (a.endDate || a.startDate)
+            );
+            return (
+              <p key={c.name} style={{ color:"#78350f", fontSize:12, margin:"2px 0 0" }}>
+                • <strong>{c.name}</strong> — {absence?.type || "out"}{absence?.reason ? `: ${absence.reason}` : ""}
+                <span style={{ color:"#92400e", fontSize:11 }}> (removed from route)</span>
+              </p>
+            );
+          })}
+        </div>
+      )}
+
       {/* Odometer */}
       <Card style={{ marginBottom: 12, borderLeft: `4px solid ${!startOdo ? COLORS.red : COLORS.accent}` }}>
         <h3 style={{ color: COLORS.text, fontSize: 14, margin: "0 0 8px", fontWeight: 700 }}>Odometer</h3>
@@ -1542,23 +1631,121 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
       <div style={{ maxWidth: 500, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
           <h2 style={{ color: COLORS.text, margin: 0, fontSize: 20 }}>📋 {driverRoute.name}</h2>
-          <Badge>{displayDriver}</Badge>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <Badge>{displayDriver}</Badge>
+            <button onClick={() => setShowTimeOffForm(true)}
+              style={{ background:COLORS.blue+"15", border:`1px solid ${COLORS.blue}`, borderRadius:8,
+                padding:"4px 10px", color:COLORS.blue, fontSize:11, fontWeight:700, cursor:"pointer" }}>
+              🏖 Time Off
+            </button>
+          </div>
         </div>
         <p style={{ color: COLORS.textDim, fontSize: 12, margin: "0 0 12px" }}>
           {today}
           {isManager && <span style={{ color: COLORS.yellow, marginLeft: 8 }}> (Manager Override)</span>}
         </p>
 
+        {/* Driver time-off request modal */}
+        {showTimeOffForm && (
+          <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.5)", zIndex:200,
+            display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+            <Card style={{ width:"100%", maxWidth:400 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+                <h3 style={{ color:COLORS.text, margin:0 }}>🏖 Request Time Off</h3>
+                <button onClick={() => setShowTimeOffForm(false)}
+                  style={{ background:"none", border:"none", fontSize:20, cursor:"pointer", color:COLORS.textMuted }}>✕</button>
+              </div>
+              <p style={{ color:COLORS.textDim, fontSize:12, margin:"0 0 14px" }}>
+                Submitting as: <strong>{user.name}</strong>
+              </p>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
+                <div>
+                  <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Start Date *</label>
+                  <input type="date" value={driverTOForm.startDate}
+                    onChange={e=>setDriverTOForm(p=>({...p,startDate:e.target.value,endDate:p.endDate||e.target.value}))}
+                    min={new Date().toISOString().slice(0,10)}
+                    style={{ width:"100%", padding:"10px 8px", background:COLORS.bg, border:`2px solid ${COLORS.blue}`,
+                      borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+                </div>
+                <div>
+                  <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>End Date</label>
+                  <input type="date" value={driverTOForm.endDate||driverTOForm.startDate}
+                    onChange={e=>setDriverTOForm(p=>({...p,endDate:e.target.value}))}
+                    min={driverTOForm.startDate}
+                    style={{ width:"100%", padding:"10px 8px", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+                      borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+                </div>
+              </div>
+              <div style={{ marginBottom:14 }}>
+                <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Reason</label>
+                <input value={driverTOForm.reason} onChange={e=>setDriverTOForm(p=>({...p,reason:e.target.value}))}
+                  placeholder="Vacation, personal, medical..."
+                  style={{ width:"100%", padding:"10px 12px", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+                    borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+              </div>
+              <div style={{ display:"flex", gap:8 }}>
+                <Btn onClick={() => {
+                  if (!driverTOForm.startDate) return alert("Start date required");
+                  // Save to localStorage directly so managers see it
+                  try {
+                    const existing = JSON.parse(localStorage.getItem('kts_timeoff')||'[]');
+                    const entry = {
+                      id: `to_${Date.now()}`,
+                      driverName: user.name,
+                      driverId: user.id,
+                      startDate: driverTOForm.startDate,
+                      endDate: driverTOForm.endDate || driverTOForm.startDate,
+                      reason: driverTOForm.reason,
+                      status: "pending",
+                      createdBy: user.name,
+                      createdAt: new Date().toISOString(),
+                    };
+                    localStorage.setItem('kts_timeoff', JSON.stringify([...existing, entry]));
+                  } catch(e) {}
+                  setDriverTOForm({startDate:"",endDate:"",reason:""});
+                  setShowTimeOffForm(false);
+                  alert("✅ Time-off request submitted! Your manager will review it.");
+                }} style={{ flex:1 }}>Submit Request</Btn>
+                <Btn outline onClick={() => setShowTimeOffForm(false)} style={{ flex:1 }}>Cancel</Btn>
+              </div>
+            </Card>
+          </div>
+        )}
+
         {/* Two widget buttons */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-          <Btn onClick={() => setActiveView("log")}
+        <div style={{ display: "flex", gap: 8, marginBottom: inspectionDone || inspectionOverride ? 16 : 0 }}>
+          <Btn
+            onClick={() => {
+              if (!inspectionDone && !inspectionOverride) {
+                // Show override warning
+                const override = window.confirm(
+                  "⚠️ VEHICLE INSPECTION REQUIRED\n\n" +
+                  "Vehicle inspections are required before starting your route.\n\n" +
+                  "They protect the safety of drivers and participants and are part of your daily responsibility.\n\n" +
+                  "Tap OK only if you are running late and will complete the inspection immediately after this route.\n\n" +
+                  "This override will be logged and reviewed by your manager."
+                );
+                if (!override) return;
+                setInspectionOverride(true);
+              }
+              setActiveView("log");
+            }}
             color={activeView === "log" ? COLORS.accent : COLORS.border}
-            style={{ flex: 1, padding: "16px 8px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            style={{ flex: 1, padding: "16px 8px", display: "flex", flexDirection: "column", alignItems: "center",
+              position:"relative" }}>
             <span style={{ fontSize: 20, marginBottom: 4 }}>📋</span>
             <span style={{ fontSize: 13 }}>Mileage Log</span>
+            {!inspectionDone && !inspectionOverride && (
+              <span style={{ position:"absolute", top:4, right:4, background:COLORS.red, color:"#fff",
+                borderRadius:"50%", width:16, height:16, fontSize:10, fontWeight:800,
+                display:"flex", alignItems:"center", justifyContent:"center" }}>!</span>
+            )}
+            {inspectionOverride && !inspectionDone && (
+              <span style={{ fontSize:9, color:COLORS.yellow, fontWeight:700 }}>OVERRIDE</span>
+            )}
           </Btn>
           <Btn onClick={() => setActiveView("inspection")}
-            color={activeView === "inspection" ? COLORS.yellow : flashInspection ? "transparent" : COLORS.border}
+            color={activeView === "inspection" ? COLORS.yellow : !inspectionDone ? COLORS.accent : COLORS.border}
             style={{
               flex: 1, padding: "16px 8px", display: "flex", flexDirection: "column", alignItems: "center",
               ...(flashInspection && !inspectionDone ? {
@@ -1569,25 +1756,74 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete }) => {
             }}>
             <span style={{ fontSize: 20, marginBottom: 4 }}>{inspectionDone ? "✅" : "🔍"}</span>
             <span style={{ fontSize: 13 }}>{inspectionDone ? "Inspection ✓" : "Inspection"}</span>
+            {!inspectionDone && !inspectionOverride && <span style={{ fontSize:9, color:"#fff", fontWeight:700, background:COLORS.accent, padding:"1px 5px", borderRadius:4, marginTop:2 }}>START HERE</span>}
             {flashInspection && !inspectionDone && <span style={{ fontSize: 10, color: COLORS.red, fontWeight: 700 }}>OVERDUE</span>}
           </Btn>
         </div>
+
+        {/* Inspection gate banner — shows if inspection not done and no override */}
+        {!inspectionDone && !inspectionOverride && activeView === "log" && (
+          <div style={{ background:"#fff0f0", border:`2px solid ${COLORS.red}`, borderRadius:12,
+            padding:"16px 14px", marginBottom:12, textAlign:"center" }}>
+            <p style={{ fontSize:28, margin:"0 0 8px" }}>🔍</p>
+            <p style={{ color:COLORS.red, fontSize:15, fontWeight:800, margin:"0 0 6px" }}>
+              Complete Vehicle Inspection First
+            </p>
+            <p style={{ color:COLORS.textMuted, fontSize:12, margin:"0 0 14px", lineHeight:1.5 }}>
+              Vehicle inspections are required before starting your route. They protect the safety of you and your passengers and are part of your daily responsibility.
+            </p>
+            <Btn onClick={() => setActiveView("inspection")} color={COLORS.accent} style={{ width:"100%", marginBottom:8 }}>
+              🔍 Start Inspection Now
+            </Btn>
+            <button onClick={() => {
+              const override = window.confirm(
+                "⚠️ OVERRIDE — INSPECTION REQUIRED\n\n" +
+                "Vehicle inspections protect driver and participant safety.\n\n" +
+                "By overriding, you acknowledge this is an emergency situation and you will complete the inspection IMMEDIATELY after your route.\n\n" +
+                "This override will be flagged for manager review.\n\nContinue anyway?"
+              );
+              if (override) { setInspectionOverride(true); }
+            }} style={{ background:"none", border:"none", color:COLORS.textMuted, fontSize:11,
+              cursor:"pointer", textDecoration:"underline", padding:0 }}>
+              Running late? Override (flagged for review)
+            </button>
+          </div>
+        )}
+
+        {/* Override warning banner — shows when override active */}
+        {inspectionOverride && !inspectionDone && (
+          <div style={{ background:"#fffbeb", border:`1px solid ${COLORS.yellow}`, borderRadius:8,
+            padding:"8px 12px", marginBottom:12 }}>
+            <p style={{ color:"#92400e", fontSize:11, fontWeight:700, margin:"0 0 3px" }}>
+              ⚠️ Inspection Override Active — Flagged for Review
+            </p>
+            <p style={{ color:"#78350f", fontSize:11, margin:0 }}>
+              Complete your inspection immediately after finishing this route.
+            </p>
+            <button onClick={() => { setInspectionOverride(false); setActiveView("inspection"); }}
+              style={{ marginTop:5, background:"none", border:`1px solid ${COLORS.yellow}`, borderRadius:6,
+                padding:"3px 10px", fontSize:11, fontWeight:700, color:"#92400e", cursor:"pointer" }}>
+              Complete Inspection Now
+            </button>
+          </div>
+        )}
 
         {/* Flash animation style */}
         {flashInspection && !inspectionDone && (
           <style>{`@keyframes flashRed { 0%,100% { border-color: ${COLORS.red}; background: ${COLORS.red}15; } 50% { border-color: ${COLORS.red}88; background: ${COLORS.red}30; } }`}</style>
         )}
 
-        {activeView === "log" ? renderLog() : (
-          <VehicleInspection embedded user={user} onComplete={(data) => { setInspectionDone(true); setActiveView("log"); if (onInspectionComplete) onInspectionComplete(data); }} />
-        )}
+        {(activeView === "log" && (inspectionDone || inspectionOverride)) ? renderLog() :
+         activeView === "inspection" ? (
+          <VehicleInspection embedded user={user} onComplete={(data) => { setInspectionDone(true); setInspectionOverride(false); setActiveView("log"); if (onInspectionComplete) onInspectionComplete(data); }} />
+        ) : null}
       </div>
     </div>
   );
 };
 
 // ============ ADMIN / MANAGER DASHBOARD ============
-const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
+const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs, absences, setAbsences, timeOffRequests, setTimeOffRequests, vehicleServices, setVehicleServices }) => {
   const [tab, setTab] = useState("routes");
   const [selectedRoute, setSelectedRoute] = useState(null);
   const [editPeriod, setEditPeriod] = useState("am");
@@ -1634,6 +1870,31 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
   const [archiveConfirm, setArchiveConfirm] = useState(null); // { participant, affectedRoutes }
   const [archiveDone, setArchiveDone] = useState(null);       // { name, affectedRoutes }
 
+  // Manager call-out & mileage adjustment state
+  const [mgrCallouts, setMgrCallouts] = useState({});         // { routeId: { clientName: true } }
+  const [calcMiles, setCalcMiles] = useState({});             // { "routeId_am": miles, "routeId_pm": miles }
+  const [calcLoading, setCalcLoading] = useState({});         // { "routeId_am": true }
+  const [odoWarning, setOdoWarning] = useState({});           // { routeId: "warning text" }
+
+  const handleMgrCallout = async (routeId, clientName, period) => {
+    setMgrCallouts(prev => {
+      const routeMap = prev[routeId] || {};
+      const updated = { ...routeMap, [clientName]: !routeMap[clientName] };
+      return { ...prev, [routeId]: updated };
+    });
+  };
+
+  const handleRecalcMiles = async (route, period) => {
+    const key = `${route.id}_${period}`;
+    setCalcLoading(p => ({ ...p, [key]: true }));
+    const calledOutNames = Object.entries(mgrCallouts[route.id] || {})
+      .filter(([,v]) => v).map(([k]) => k);
+    const stops = period === "am" ? route.amStops : route.pmStops;
+    const miles = await calcRouteMiles(stops, calledOutNames);
+    setCalcMiles(p => ({ ...p, [key]: miles }));
+    setCalcLoading(p => ({ ...p, [key]: false }));
+  };
+
   // Driver reassignment
   const allDriversAndManagers = users.filter(u => ["driver","manager","admin","admin_assistant"].includes(u.role));
   const handleReassignDriver = (routeId, newDriverName) => {
@@ -1652,11 +1913,12 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
     { id: "clients",      label: "Clients",       icon: "👥" },
     { id: "participants", label: "Participants",   icon: "📋" },
     { id: "schedule",     label: "Schedule",       icon: "📅" },
+    { id: "calendar",     label: "Calendar",       icon: "🗓️" },
+    { id: "vehicles",     label: "Vehicles",       icon: "🔧" },
     { id: "mileage",      label: "Mileage",        icon: "📊" },
     { id: "logs",         label: "Logs",           icon: "📋" },
     { id: "inspect",      label: "Inspections",    icon: "🔍" },
     { id: "users",        label: "Users",          icon: "🔑" },
-    // Reports tab — admin and admin assistant only (no managers/drivers)
     ...(isFullAccess ? [{ id: "reports", label: "Reports", icon: "📥" }] : []),
   ];
 
@@ -1895,15 +2157,25 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
           {tab === "routes" && (
             <div>
               {!selectedRoute ? (
-                routes.map(route => (
+                routes.map(route => {
+                  const routeCallouts = mgrCallouts[route.id] || {};
+                  const calledOutCount = Object.values(routeCallouts).filter(Boolean).length;
+                  const activeClients = route.clients.filter(c => c.active);
+
+                  return (
                   <Card key={route.id} style={{ marginBottom: 8 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setSelectedRoute(route.id)}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <h3 style={{ color: COLORS.text, margin: 0, fontSize: 16 }}>{route.name}</h3>
+                          {calledOutCount > 0 && (
+                            <span style={{ background: COLORS.red, color:"#fff", borderRadius:10, padding:"1px 8px", fontSize:11, fontWeight:700 }}>
+                              {calledOutCount} called out
+                            </span>
+                          )}
                         </div>
                         <p style={{ color: COLORS.textDim, fontSize: 12, margin: "4px 0 0" }}>
-                          {route.clients.filter(c => c.active).length} active clients · Vehicle: {route.vehicleId}
+                          {activeClients.length} active clients · Vehicle: {route.vehicleId}
                         </p>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
@@ -1921,8 +2193,102 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
                         </p>
                       </div>
                     </div>
+
+                    {/* ── Manager Call-Out Panel ── */}
+                    {activeClients.length > 0 && (
+                      <div style={{ marginTop:10, paddingTop:10, borderTop:`1px solid ${COLORS.border}` }}>
+                        <p style={{ color: COLORS.textMuted, fontSize:11, fontWeight:700, margin:"0 0 8px",
+                          textTransform:"uppercase", letterSpacing:0.5 }}>
+                          📵 Today's Call-Outs — adjust route mileage
+                        </p>
+                        <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:8 }}>
+                          {activeClients.map(cl => {
+                            const isCO = !!routeCallouts[cl.name];
+                            return (
+                              <button key={cl.name} onClick={async () => {
+                                const newCO = !isCO;
+                                setMgrCallouts(prev => ({
+                                  ...prev,
+                                  [route.id]: { ...(prev[route.id]||{}), [cl.name]: newCO }
+                                }));
+                              }} style={{
+                                padding:"5px 10px", borderRadius:16, fontSize:12, fontWeight:700, cursor:"pointer",
+                                border:`2px solid ${isCO ? COLORS.red : COLORS.border}`,
+                                background: isCO ? "#fef2f2" : "transparent",
+                                color: isCO ? COLORS.red : COLORS.textMuted,
+                                textDecoration: isCO ? "line-through" : "none",
+                              }}>
+                                {cl.name.split(", ")[1] || cl.name}
+                                {isCO ? " ✕" : ""}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Recalculate mileage buttons */}
+                        {calledOutCount > 0 && (
+                          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                            {["am","pm"].map(period => {
+                              const key = `${route.id}_${period}`;
+                              const loading = calcLoading[key];
+                              const calculated = calcMiles[key];
+                              const stops = period==="am" ? route.amStops : route.pmStops;
+                              return (
+                                <div key={period} style={{ flex:1, minWidth:120 }}>
+                                  <button onClick={() => handleRecalcMiles(route, period)}
+                                    disabled={loading}
+                                    style={{ width:"100%", padding:"7px 10px", borderRadius:8, fontSize:12, fontWeight:700,
+                                      background: COLORS.blue, color:"#fff", border:"none", cursor:"pointer",
+                                      opacity: loading ? 0.6 : 1 }}>
+                                    {loading ? "⏳ Calculating..." : `📍 Recalc ${period.toUpperCase()} Miles`}
+                                  </button>
+                                  {calculated !== undefined && !loading && (
+                                    <div style={{ marginTop:4, padding:"6px 10px", background:"#f0fdf4",
+                                      borderRadius:6, border:`1px solid #86efac` }}>
+                                      <p style={{ color:"#166534", fontSize:12, fontWeight:800, margin:0 }}>
+                                        {period.toUpperCase()} Adjusted: <strong>{calculated} mi</strong>
+                                      </p>
+                                      <p style={{ color:COLORS.textMuted, fontSize:10, margin:"2px 0 0" }}>
+                                        Original: {(period==="am"?route.amMiles:route.pmMiles).toFixed(1)} mi · Saved {((period==="am"?route.amMiles:route.pmMiles) - calculated).toFixed(1)} mi
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Odometer validation hint */}
+                        {(calcMiles[`${route.id}_am`] || calcMiles[`${route.id}_pm`]) && (
+                          <div style={{ marginTop:8, padding:"8px 10px", background:"#fffbeb",
+                            borderRadius:6, border:`1px solid ${COLORS.yellow}` }}>
+                            <p style={{ color:"#92400e", fontSize:11, fontWeight:700, margin:"0 0 2px" }}>
+                              📋 Expected Odometer Range
+                            </p>
+                            {calcMiles[`${route.id}_am`] && (
+                              <p style={{ color:COLORS.text, fontSize:11, margin:"1px 0" }}>
+                                AM: driver should travel ~<strong>{calcMiles[`${route.id}_am`]} mi</strong>
+                              </p>
+                            )}
+                            {calcMiles[`${route.id}_pm`] && (
+                              <p style={{ color:COLORS.text, fontSize:11, margin:"1px 0" }}>
+                                PM: driver should travel ~<strong>{calcMiles[`${route.id}_pm`]} mi</strong>
+                              </p>
+                            )}
+                            {calcMiles[`${route.id}_am`] && calcMiles[`${route.id}_pm`] && (
+                              <p style={{ color:COLORS.accent, fontSize:11, fontWeight:700, margin:"3px 0 0" }}>
+                                Total day: ~{(calcMiles[`${route.id}_am`] + calcMiles[`${route.id}_pm`]).toFixed(1)} mi
+                                · Odometer end = start + {(calcMiles[`${route.id}_am`] + calcMiles[`${route.id}_pm`]).toFixed(1)}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </Card>
-                ))
+                  );
+                })
               ) : (
                 (() => {
                   const route = routes.find(r => r.id === selectedRoute);
@@ -2365,24 +2731,242 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
               {/* Edit Participant Modal */}
               {editClientData && (
                 <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
-                  <Card style={{ width:"100%", maxWidth:440, maxHeight:"90vh", overflowY:"auto" }}>
-                    <h3 style={{ color: COLORS.text, margin:"0 0 16px" }}>✏️ Edit Participant</h3>
+                  <Card style={{ width:"100%", maxWidth:440, maxHeight:"92vh", overflowY:"auto" }}>
+                    <h3 style={{ color: COLORS.text, margin:"0 0 14px" }}>✏️ Edit Participant</h3>
+
                     <Input label="Full Name" value={editClientData.client.name}
                       onChange={e => setEditClientData(p=>({...p, client:{...p.client, name:e.target.value}}))} />
                     <Input label="Home Address" value={editClientData.client.address}
-                      onChange={e => setEditClientData(p=>({...p, client:{...p.client, address:e.target.value}}))} />
+                      onChange={e => setEditClientData(p=>({...p, client:{...p.client, address:e.target.value}}))}
+                      placeholder="Street address, City, State ZIP" />
+
+                    {/* ══ SCHEDULE BUILDER ══════════════════════════════════════ */}
+                    <div style={{ background:"#f8fafc", borderRadius:10, padding:"12px", marginBottom:12, border:`1px solid ${COLORS.border}` }}>
+                      <p style={{ color: COLORS.text, fontSize:13, fontWeight:800, margin:"0 0 10px" }}>📅 Weekly Schedule</p>
+
+                      {/* Same-time toggle */}
+                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10,
+                        background:"#eff6ff", borderRadius:8, padding:"8px 12px" }}>
+                        <button onClick={() => setEditClientData(p=>({...p,client:{...p.client,sameTimeAllDays:!p.client.sameTimeAllDays}}))}
+                          style={{ width:36, height:20, borderRadius:10, border:"none", cursor:"pointer",
+                            background: editClientData.client.sameTimeAllDays ? COLORS.accent : COLORS.border,
+                            position:"relative", flexShrink:0, transition:"background 0.2s" }}>
+                          <span style={{ position:"absolute", top:2, left: editClientData.client.sameTimeAllDays ? 18 : 2,
+                            width:16, height:16, background:"#fff", borderRadius:"50%", transition:"left 0.2s" }} />
+                        </button>
+                        <div>
+                          <p style={{ color:COLORS.text, fontSize:12, fontWeight:700, margin:0 }}>
+                            {editClientData.client.sameTimeAllDays ? "Same time all days" : "Different times per day"}
+                          </p>
+                          <p style={{ color:COLORS.textMuted, fontSize:10, margin:0 }}>
+                            {editClientData.client.sameTimeAllDays
+                              ? "Set one AM pickup & PM pickup time — applies to all selected days"
+                              : "Set individual pickup & PM pickup times for each day"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Day selector buttons */}
+                      <div style={{ display:"flex", gap:5, marginBottom:10 }}>
+                        {["Mon","Tue","Wed","Thu","Fri"].map(day => {
+                          const sched = editClientData.client.daySchedule || {};
+                          const on = !!sched[day];
+                          return (
+                            <button key={day} onClick={() => {
+                              const current = editClientData.client.daySchedule || {};
+                              const next = on
+                                ? Object.fromEntries(Object.entries(current).filter(([k])=>k!==day))
+                                : { ...current, [day]: { amPickup:"", pmPickup:"", dropoff:"" } };
+                              setEditClientData(p=>({...p,client:{...p.client,daySchedule:next}}));
+                            }} style={{
+                              flex:1, padding:"7px 4px", borderRadius:8, fontSize:12, fontWeight:800, cursor:"pointer",
+                              border:`2px solid ${on ? COLORS.accent : COLORS.border}`,
+                              background: on ? COLORS.accent : "transparent",
+                              color: on ? "#fff" : COLORS.textMuted,
+                            }}>{day}</button>
+                          );
+                        })}
+                      </div>
+
+                      {/* SAME TIME ALL DAYS mode */}
+                      {editClientData.client.sameTimeAllDays && Object.keys(editClientData.client.daySchedule||{}).length > 0 && (() => {
+                        const fmt24 = (t12) => {
+                          if (!t12) return "";
+                          const m = t12.match(/(\d+):(\d+)\s*(AM|PM)/i);
+                          if (!m) return "";
+                          let h = parseInt(m[1]); const min = m[2]; const ap = m[3].toUpperCase();
+                          if (ap==="PM" && h!==12) h+=12;
+                          if (ap==="AM" && h===12) h=0;
+                          return `${String(h).padStart(2,"0")}:${min}`;
+                        };
+                        const to12 = (t) => {
+                          if (!t) return "";
+                          const [h,m] = t.split(":").map(Number);
+                          const ap = h>=12?"PM":"AM"; const h12=h%12||12;
+                          return `${h12}:${String(m).padStart(2,"0")} ${ap}`;
+                        };
+                        const globalAM = editClientData.client._globalAM || "";
+                        const globalPM = editClientData.client._globalPM || "";
+                        const globalDrop = editClientData.client._globalDrop || "";
+                        const days = Object.keys(editClientData.client.daySchedule||{});
+
+                        const applyGlobal = (field, val24, val12) => {
+                          const updated = {};
+                          days.forEach(d => { updated[d] = { ...(editClientData.client.daySchedule[d]||{}), [field]: val12 }; });
+                          setEditClientData(p=>({...p, client:{...p.client, daySchedule:{...p.client.daySchedule,...updated}}}));
+                        };
+
+                        return (
+                          <div style={{ background:"#fff", borderRadius:8, padding:"10px 12px", border:`1px solid ${COLORS.border}` }}>
+                            <p style={{ color:COLORS.textMuted, fontSize:11, margin:"0 0 8px" }}>
+                              Applied to: <strong>{days.join(", ")}</strong>
+                            </p>
+                            {/* AM Pickup */}
+                            <div style={{ marginBottom:8 }}>
+                              <label style={{ display:"block", color:COLORS.textDim, fontSize:11, fontWeight:700, marginBottom:3 }}>
+                                ☀️ AM Pickup Time
+                              </label>
+                              <input type="time" value={globalAM}
+                                onChange={e => {
+                                  setEditClientData(p=>({...p,client:{...p.client,_globalAM:e.target.value}}));
+                                  applyGlobal("amPickup", e.target.value, to12(e.target.value));
+                                }}
+                                style={{ width:"100%", padding:"9px 10px", background:COLORS.bg, border:`2px solid ${COLORS.yellow}`,
+                                  borderRadius:7, color:COLORS.text, fontSize:14, fontWeight:700, boxSizing:"border-box" }} />
+                              {globalAM && <p style={{ color:"#7c5c00", fontSize:10, margin:"3px 0 0", fontWeight:700 }}>→ {to12(globalAM)}</p>}
+                            </div>
+                            {/* Drop-off */}
+                            <div style={{ marginBottom:8 }}>
+                              <label style={{ display:"block", color:COLORS.textDim, fontSize:11, fontWeight:700, marginBottom:3 }}>
+                                📍 Program Drop-off Time
+                              </label>
+                              <input type="time" value={globalDrop}
+                                onChange={e => {
+                                  setEditClientData(p=>({...p,client:{...p.client,_globalDrop:e.target.value}}));
+                                  applyGlobal("dropoff", e.target.value, to12(e.target.value));
+                                }}
+                                style={{ width:"100%", padding:"9px 10px", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+                                  borderRadius:7, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+                              {globalDrop && <p style={{ color:"#7c5c00", fontSize:10, margin:"3px 0 0", fontWeight:700 }}>→ {to12(globalDrop)}</p>}
+                            </div>
+                            {/* PM Pickup */}
+                            <div>
+                              <label style={{ display:"block", color:COLORS.textDim, fontSize:11, fontWeight:700, marginBottom:3 }}>
+                                🌙 PM Pickup Time (from program)
+                              </label>
+                              <input type="time" value={globalPM}
+                                onChange={e => {
+                                  setEditClientData(p=>({...p,client:{...p.client,_globalPM:e.target.value}}));
+                                  applyGlobal("pmPickup", e.target.value, to12(e.target.value));
+                                }}
+                                style={{ width:"100%", padding:"9px 10px", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+                                  borderRadius:7, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+                              {globalPM && <p style={{ color:"#7c5c00", fontSize:10, margin:"3px 0 0", fontWeight:700 }}>→ {to12(globalPM)}</p>}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* DIFFERENT TIMES PER DAY mode */}
+                      {!editClientData.client.sameTimeAllDays && (() => {
+                        const sched = editClientData.client.daySchedule || {};
+                        const selectedDays = ["Mon","Tue","Wed","Thu","Fri"].filter(d => !!sched[d]);
+                        if (selectedDays.length === 0) return (
+                          <p style={{ color:COLORS.textMuted, fontSize:12, textAlign:"center", padding:"8px 0" }}>
+                            Select days above to set times
+                          </p>
+                        );
+                        const to12 = (t) => {
+                          if (!t) return "";
+                          const [h,m] = t.split(":").map(Number);
+                          const ap = h>=12?"PM":"AM"; const h12=h%12||12;
+                          return `${h12}:${String(m).padStart(2,"0")} ${ap}`;
+                        };
+                        const to24 = (t12) => {
+                          if (!t12) return "";
+                          const m = t12.match(/(\d+):(\d+)\s*(AM|PM)/i);
+                          if (!m) return "";
+                          let h = parseInt(m[1]); const min = m[2]; const ap = m[3].toUpperCase();
+                          if (ap==="PM" && h!==12) h+=12;
+                          if (ap==="AM" && h===12) h=0;
+                          return `${String(h).padStart(2,"0")}:${min}`;
+                        };
+                        const updateDay = (day, field, val12) => {
+                          setEditClientData(p=>({...p,client:{...p.client,daySchedule:{...p.client.daySchedule,[day]:{...p.client.daySchedule[day],[field]:val12}}}}));
+                        };
+                        return (
+                          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                            {selectedDays.map(day => {
+                              const d = sched[day] || {};
+                              return (
+                                <div key={day} style={{ background:"#fff", borderRadius:8, padding:"10px 12px", border:`1px solid ${COLORS.border}` }}>
+                                  <p style={{ color:COLORS.text, fontSize:13, fontWeight:800, margin:"0 0 8px" }}>{day}</p>
+                                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:6 }}>
+                                    {[
+                                      { label:"☀️ AM Pickup", field:"amPickup", border:COLORS.yellow },
+                                      { label:"📍 Drop-off",  field:"dropoff",  border:COLORS.border },
+                                      { label:"🌙 PM Pickup", field:"pmPickup", border:COLORS.border },
+                                    ].map(({label, field, border}) => (
+                                      <div key={field}>
+                                        <label style={{ display:"block", color:COLORS.textDim, fontSize:9, fontWeight:700, marginBottom:2 }}>{label}</label>
+                                        <input type="time" value={to24(d[field]||"")}
+                                          onChange={e => updateDay(day, field, to12(e.target.value))}
+                                          style={{ width:"100%", padding:"6px 4px", background:COLORS.bg, border:`2px solid ${border}`,
+                                            borderRadius:6, color:COLORS.text, fontSize:12, fontWeight:700, boxSizing:"border-box" }} />
+                                        {d[field] && <p style={{ color:"#7c5c00", fontSize:9, margin:"2px 0 0", fontWeight:700 }}>{d[field]}</p>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Schedule summary */}
+                      {Object.keys(editClientData.client.daySchedule||{}).length > 0 && (() => {
+                        const sched = editClientData.client.daySchedule || {};
+                        const activeDays = Object.entries(sched).filter(([,v])=>v);
+                        return (
+                          <div style={{ marginTop:8, padding:"6px 10px", background:"#f0fdf4", borderRadius:6, border:`1px solid #86efac` }}>
+                            <p style={{ color:"#166534", fontSize:11, fontWeight:700, margin:0 }}>
+                              ✓ Schedule: {activeDays.map(([day,times])=>{
+                                const t = times.amPickup ? ` ${times.amPickup}` : "";
+                                return day+t;
+                              }).join(" · ")}
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    {/* ══ END SCHEDULE BUILDER ═══════════════════════════════════ */}
+
+                    {/* ── Day Program ── */}
                     <div style={{ background:"#eff6ff", borderRadius:8, padding:"10px 12px", marginBottom:12 }}>
-                      <p style={{ color: COLORS.blue, fontSize:12, fontWeight:700, margin:"0 0 8px" }}>📍 Day Program / Work Site Drop-off</p>
+                      <p style={{ color: COLORS.blue, fontSize:12, fontWeight:700, margin:"0 0 8px" }}>📍 Day Program / Work Site</p>
                       <Input label="Program Name (e.g. PCS, CVTC, Galt Act)" value={editClientData.client.dayProgram||''}
                         onChange={e => setEditClientData(p=>({...p, client:{...p.client, dayProgram:e.target.value}}))}
                         placeholder="e.g. PCS" />
-                      <Input label="Program Drop-off Address" value={editClientData.client.dropoffAddress||''}
+                      <Input label="Program Address" value={editClientData.client.dropoffAddress||''}
                         onChange={e => setEditClientData(p=>({...p, client:{...p.client, dropoffAddress:e.target.value}}))}
                         placeholder="Full drop-off address" />
                     </div>
+
+                    {/* ── Notes ── */}
+                    <div style={{ marginBottom:12 }}>
+                      <label style={{ display:"block", color: COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>
+                        Notes / Gate Codes
+                      </label>
+                      <input value={editClientData.client.notes||""} onChange={e=>setEditClientData(p=>({...p,client:{...p.client,notes:e.target.value}}))}
+                        placeholder="e.g. Gate Code: 9162, ring doorbell" style={{ width:"100%", padding:"10px 12px", background:COLORS.bg,
+                          border:`1px solid ${COLORS.border}`, borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+                    </div>
+
                     <Input label="UCI Number" value={editClientData.client.uci||''}
                       onChange={e => setEditClientData(p=>({...p, client:{...p.client, uci:e.target.value}}))}
                       placeholder="Optional" />
+
                     <div style={{ marginBottom:12 }}>
                       <label style={{ display:"block", color: COLORS.textDim, fontSize:12, marginBottom:4, fontWeight:600 }}>Move to Different Route</label>
                       <select value={editClientData.routeId}
@@ -2391,6 +2975,7 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
                         {routes.map(r => <option key={r.id} value={r.id}>{r.name} — {r.driver}</option>)}
                       </select>
                     </div>
+
                     <div style={{ display:"flex", gap:8, marginTop:8 }}>
                       <Btn onClick={() => {
                         const { routeId, client } = editClientData;
@@ -2630,6 +3215,19 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
             </div>
           )}
 
+          {/* CALENDAR TAB */}
+          {tab === "calendar" && (
+            <CalendarTab
+              routes={routes}
+              users={users}
+              absences={absences}
+              setAbsences={setAbsences}
+              timeOffRequests={timeOffRequests}
+              setTimeOffRequests={setTimeOffRequests}
+              currentUser={user}
+            />
+          )}
+
           {/* MILEAGE TAB */}
           {tab === "mileage" && (
             <div>
@@ -2725,6 +3323,16 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
                 ))
               )}
             </div>
+          )}
+
+          {/* VEHICLES TAB */}
+          {tab === "vehicles" && (
+            <VehiclesTab
+              routes={routes}
+              vehicleServices={vehicleServices}
+              setVehicleServices={setVehicleServices}
+              currentUser={user}
+            />
           )}
 
           {/* INSPECTIONS TAB */}
@@ -2960,7 +3568,7 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
 
           {/* REPORTS TAB — Admin, Admin Assistant, and Manager */}
           {tab === "reports" && isFullAccess && (
-            <ReportsTab logs={logs} routes={routes} isAdmin={isAdmin} />
+            <ReportsTab logs={logs} routes={routes} isAdmin={isAdmin} absences={absences} />
           )}
         </div>
       </div>
@@ -2968,8 +3576,793 @@ const AdminDashboard = ({ user, routes, setRoutes, users, setUsers, logs }) => {
   );
 };
 
+// ============ VEHICLES TAB COMPONENT ============
+const SERVICE_TYPES = [
+  "Oil Change", "Tire Rotation", "Brake Service", "Air Filter", "Transmission Service",
+  "Coolant Flush", "Spark Plugs", "Battery Replacement", "Inspection/Smog", "Other"
+];
+
+function VehiclesTab({ routes, vehicleServices, setVehicleServices, currentUser }) {
+  const isAdmin = currentUser.role === 'admin';
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [selectedVehicle, setSelectedVehicle] = useState('all');
+
+  const blank = {
+    vehicleId:"", vehicleName:"", type:"Oil Change", serviceType:"history",
+    date:"", nextDueDate:"", nextDueMiles:"", mileageAtService:"",
+    notes:"", technician:"", shop:"", cost:"", urgent:false
+  };
+  const [form, setForm] = useState(blank);
+
+  const todayStr = new Date().toISOString().slice(0,10);
+
+  // Build unique vehicle list from routes
+  const vehicles = routes.map(r => ({ id:r.id, vehicleId:r.vehicleId, name:r.name, driver:r.driver }));
+
+  const filtered = selectedVehicle === 'all'
+    ? vehicleServices
+    : vehicleServices.filter(s => s.vehicleId === selectedVehicle);
+
+  const history = filtered.filter(s => s.serviceType === 'history').sort((a,b) => b.date.localeCompare(a.date));
+  const reminders = filtered.filter(s => s.serviceType === 'reminder').sort((a,b) => (a.nextDueDate||'').localeCompare(b.nextDueDate||''));
+
+  // Reminders that are due/overdue
+  const overdueReminders = reminders.filter(r => r.nextDueDate && r.nextDueDate <= todayStr);
+  const upcomingReminders = reminders.filter(r => {
+    if (!r.nextDueDate) return false;
+    const d = new Date(r.nextDueDate);
+    const now = new Date();
+    const diff = (d - now) / (1000*60*60*24);
+    return diff > 0 && diff <= 30;
+  });
+
+  const save = () => {
+    if (!form.vehicleId) return alert("Select a vehicle");
+    if (!form.type) return alert("Service type required");
+    if (form.serviceType === 'history' && !form.date) return alert("Service date required");
+    if (form.serviceType === 'reminder' && !form.nextDueDate) return alert("Due date required");
+    const vehicle = vehicles.find(v => v.id === form.vehicleId);
+    const entry = {
+      ...form,
+      id: editItem?.id || `svc_${Date.now()}`,
+      vehicleName: vehicle?.vehicleId || form.vehicleId,
+      routeName: vehicle?.name || '',
+      createdBy: currentUser.name,
+      createdAt: new Date().toISOString(),
+    };
+    if (editItem) {
+      setVehicleServices(prev => prev.map(s => s.id === editItem.id ? entry : s));
+    } else {
+      setVehicleServices(prev => [...prev, entry]);
+    }
+    setForm(blank); setEditItem(null); setShowForm(false);
+  };
+
+  const del = (id) => { if (confirm("Delete this record?")) setVehicleServices(prev => prev.filter(s => s.id !== id)); };
+
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+        <h3 style={{ color:COLORS.text, margin:0 }}>🔧 Vehicle Service</h3>
+        {isAdmin && (
+          <Btn small onClick={() => { setForm(blank); setEditItem(null); setShowForm(true); }}>+ Add Record</Btn>
+        )}
+      </div>
+
+      {/* Vehicle filter */}
+      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
+        <button onClick={() => setSelectedVehicle('all')} style={{
+          padding:"5px 12px", borderRadius:16, fontSize:12, fontWeight:700, cursor:"pointer",
+          border:`2px solid ${selectedVehicle==='all'?COLORS.accent:COLORS.border}`,
+          background:selectedVehicle==='all'?COLORS.accent:"transparent",
+          color:selectedVehicle==='all'?"#fff":COLORS.textMuted }}>All</button>
+        {vehicles.map(v => (
+          <button key={v.id} onClick={() => setSelectedVehicle(v.id)} style={{
+            padding:"5px 12px", borderRadius:16, fontSize:12, fontWeight:700, cursor:"pointer",
+            border:`2px solid ${selectedVehicle===v.id?COLORS.accent:COLORS.border}`,
+            background:selectedVehicle===v.id?COLORS.accent:"transparent",
+            color:selectedVehicle===v.id?"#fff":COLORS.textMuted }}>
+            {v.vehicleId}
+          </button>
+        ))}
+      </div>
+
+      {/* Overdue / Urgent alerts */}
+      {overdueReminders.length > 0 && (
+        <div style={{ background:"#fef2f2", border:`2px solid ${COLORS.red}`, borderRadius:10, padding:"10px 14px", marginBottom:12 }}>
+          <p style={{ color:COLORS.red, fontSize:13, fontWeight:800, margin:"0 0 6px" }}>
+            🚨 {overdueReminders.length} Service{overdueReminders.length>1?"s":""} Overdue
+          </p>
+          {overdueReminders.map(r => (
+            <p key={r.id} style={{ color:"#7f1d1d", fontSize:12, margin:"2px 0" }}>
+              • {r.vehicleName} — {r.type} was due {r.nextDueDate}
+            </p>
+          ))}
+        </div>
+      )}
+      {upcomingReminders.length > 0 && (
+        <div style={{ background:"#fffbeb", border:`1px solid ${COLORS.yellow}`, borderRadius:10, padding:"10px 14px", marginBottom:12 }}>
+          <p style={{ color:"#92400e", fontSize:13, fontWeight:800, margin:"0 0 6px" }}>
+            ⚠️ {upcomingReminders.length} Service{upcomingReminders.length>1?"s":""} Due Within 30 Days
+          </p>
+          {upcomingReminders.map(r => (
+            <p key={r.id} style={{ color:"#78350f", fontSize:12, margin:"2px 0" }}>
+              • {r.vehicleName} — {r.type} due {r.nextDueDate}{r.nextDueMiles ? ` or ${r.nextDueMiles} mi` : ""}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {/* Service Reminders */}
+      <h4 style={{ color:COLORS.text, fontSize:14, margin:"0 0 8px" }}>🔔 Service Reminders</h4>
+      {reminders.length === 0 ? (
+        <Card style={{ marginBottom:12 }}>
+          <p style={{ color:COLORS.textMuted, textAlign:"center", fontSize:13, margin:0 }}>
+            {isAdmin ? "No reminders set. Add a reminder to track upcoming services." : "No service reminders set."}
+          </p>
+        </Card>
+      ) : (
+        reminders.map(r => {
+          const isOverdue = r.nextDueDate && r.nextDueDate <= todayStr;
+          const isDueSoon = !isOverdue && upcomingReminders.includes(r);
+          return (
+            <Card key={r.id} style={{ marginBottom:8, borderLeft:`3px solid ${isOverdue?COLORS.red:isDueSoon?COLORS.yellow:COLORS.border}` }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
+                    <span style={{ color:COLORS.text, fontSize:14, fontWeight:700 }}>{r.vehicleName}</span>
+                    <Badge color={isOverdue?COLORS.red:isDueSoon?COLORS.yellow:COLORS.blue}>{r.type}</Badge>
+                    {r.urgent && <Badge color={COLORS.red}>URGENT</Badge>}
+                  </div>
+                  <p style={{ color:COLORS.textMuted, fontSize:12, margin:0 }}>
+                    Due: <strong>{r.nextDueDate||"—"}</strong>
+                    {r.nextDueMiles ? ` · Or at ${r.nextDueMiles} miles` : ""}
+                  </p>
+                  {r.notes && <p style={{ color:COLORS.textDim, fontSize:11, margin:"2px 0 0" }}>{r.notes}</p>}
+                  <p style={{ color:COLORS.textMuted, fontSize:10, margin:"2px 0 0" }}>{r.routeName} · Added by {r.createdBy}</p>
+                </div>
+                {isAdmin && (
+                  <div style={{ display:"flex", gap:4 }}>
+                    <button onClick={() => { setForm({...r}); setEditItem(r); setShowForm(true); }}
+                      style={{ background:"none", border:`1px solid ${COLORS.border}`, borderRadius:6, padding:"4px 8px", cursor:"pointer", color:COLORS.textMuted, fontSize:12 }}>✏️</button>
+                    <button onClick={() => del(r.id)}
+                      style={{ background:"none", border:"none", color:COLORS.red, cursor:"pointer", fontSize:16, padding:"4px 6px" }}>✕</button>
+                  </div>
+                )}
+              </div>
+            </Card>
+          );
+        })
+      )}
+
+      {/* Service History */}
+      <h4 style={{ color:COLORS.text, fontSize:14, margin:"16px 0 8px" }}>📋 Service History</h4>
+      {history.length === 0 ? (
+        <Card>
+          <p style={{ color:COLORS.textMuted, textAlign:"center", fontSize:13, margin:0 }}>
+            {isAdmin ? "No service history. Add completed services to track maintenance." : "No service history recorded."}
+          </p>
+        </Card>
+      ) : (
+        history.map(h => (
+          <Card key={h.id} style={{ marginBottom:8 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+              <div style={{ flex:1 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
+                  <span style={{ color:COLORS.text, fontSize:14, fontWeight:700 }}>{h.vehicleName}</span>
+                  <Badge color={COLORS.accent}>{h.type}</Badge>
+                </div>
+                <p style={{ color:COLORS.textMuted, fontSize:12, margin:0 }}>
+                  📅 {h.date}
+                  {h.mileageAtService ? ` · ${h.mileageAtService} mi` : ""}
+                  {h.shop ? ` · ${h.shop}` : ""}
+                </p>
+                {h.cost && isAdmin && <p style={{ color:"#166534", fontSize:11, margin:"2px 0 0", fontWeight:700 }}>💰 ${h.cost}</p>}
+                {h.notes && <p style={{ color:COLORS.textDim, fontSize:11, margin:"2px 0 0" }}>{h.notes}</p>}
+                <p style={{ color:COLORS.textMuted, fontSize:10, margin:"2px 0 0" }}>{h.routeName} · Recorded by {h.createdBy}</p>
+              </div>
+              {isAdmin && (
+                <div style={{ display:"flex", gap:4 }}>
+                  <button onClick={() => { setForm({...h}); setEditItem(h); setShowForm(true); }}
+                    style={{ background:"none", border:`1px solid ${COLORS.border}`, borderRadius:6, padding:"4px 8px", cursor:"pointer", color:COLORS.textMuted, fontSize:12 }}>✏️</button>
+                  <button onClick={() => del(h.id)}
+                    style={{ background:"none", border:"none", color:COLORS.red, cursor:"pointer", fontSize:16, padding:"4px 6px" }}>✕</button>
+                </div>
+              )}
+            </div>
+          </Card>
+        ))
+      )}
+
+      {/* Add/Edit Modal — Admin only */}
+      {isAdmin && showForm && (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.5)", zIndex:200,
+          display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <Card style={{ width:"100%", maxWidth:440, maxHeight:"92vh", overflowY:"auto" }}>
+            <h3 style={{ color:COLORS.text, margin:"0 0 14px" }}>
+              {editItem ? "✏️ Edit Service Record" : "🔧 Add Service Record"}
+            </h3>
+
+            {/* Record type */}
+            <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+              {[["history","📋 Service Done","#22c55e"],["reminder","🔔 Reminder","#f59e0b"]].map(([val,label,color])=>(
+                <button key={val} onClick={()=>setForm(p=>({...p,serviceType:val}))}
+                  style={{ flex:1, padding:"10px", borderRadius:8, fontSize:12, fontWeight:700, cursor:"pointer",
+                    border:`2px solid ${form.serviceType===val?color:COLORS.border}`,
+                    background:form.serviceType===val?color+"22":"transparent",
+                    color:form.serviceType===val?color:COLORS.textMuted }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Vehicle */}
+            <div style={{ marginBottom:12 }}>
+              <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Vehicle *</label>
+              <select value={form.vehicleId} onChange={e=>setForm(p=>({...p,vehicleId:e.target.value}))}
+                style={{ width:"100%", padding:"10px 12px", background:COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color:COLORS.text, fontSize:14 }}>
+                <option value="">— Select vehicle —</option>
+                {vehicles.map(v => <option key={v.id} value={v.id}>{v.vehicleId} ({v.name} — {v.driver})</option>)}
+              </select>
+            </div>
+
+            {/* Service type */}
+            <div style={{ marginBottom:12 }}>
+              <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Service Type *</label>
+              <select value={form.type} onChange={e=>setForm(p=>({...p,type:e.target.value}))}
+                style={{ width:"100%", padding:"10px 12px", background:COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color:COLORS.text, fontSize:14 }}>
+                {SERVICE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+
+            {/* History fields */}
+            {form.serviceType === 'history' && (
+              <>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
+                  <div>
+                    <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Date Done *</label>
+                    <input type="date" value={form.date} onChange={e=>setForm(p=>({...p,date:e.target.value}))}
+                      style={{ width:"100%", padding:"10px 8px", background:COLORS.bg, border:`2px solid ${COLORS.accent}`, borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+                  </div>
+                  <div>
+                    <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Mileage at Service</label>
+                    <input type="number" value={form.mileageAtService} onChange={e=>setForm(p=>({...p,mileageAtService:e.target.value}))}
+                      placeholder="e.g. 94754" style={{ width:"100%", padding:"10px 8px", background:COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+                  </div>
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
+                  <div>
+                    <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Shop / Technician</label>
+                    <input value={form.shop} onChange={e=>setForm(p=>({...p,shop:e.target.value}))}
+                      placeholder="e.g. Jiffy Lube" style={{ width:"100%", padding:"10px 8px", background:COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+                  </div>
+                  <div>
+                    <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Cost ($)</label>
+                    <input type="number" value={form.cost} onChange={e=>setForm(p=>({...p,cost:e.target.value}))}
+                      placeholder="0.00" style={{ width:"100%", padding:"10px 8px", background:COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Reminder fields */}
+            {form.serviceType === 'reminder' && (
+              <>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
+                  <div>
+                    <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Due Date *</label>
+                    <input type="date" value={form.nextDueDate} onChange={e=>setForm(p=>({...p,nextDueDate:e.target.value}))}
+                      style={{ width:"100%", padding:"10px 8px", background:COLORS.bg, border:`2px solid ${COLORS.yellow}`, borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+                  </div>
+                  <div>
+                    <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Or At Mileage</label>
+                    <input type="number" value={form.nextDueMiles} onChange={e=>setForm(p=>({...p,nextDueMiles:e.target.value}))}
+                      placeholder="e.g. 100000" style={{ width:"100%", padding:"10px 8px", background:COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+                  </div>
+                </div>
+                <div style={{ marginBottom:12, display:"flex", alignItems:"center", gap:8 }}>
+                  <input type="checkbox" checked={form.urgent} onChange={e=>setForm(p=>({...p,urgent:e.target.checked}))}
+                    style={{ width:16, height:16 }} />
+                  <label style={{ color:COLORS.red, fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                    Mark as URGENT (shows red alert to drivers and managers)
+                  </label>
+                </div>
+              </>
+            )}
+
+            {/* Notes */}
+            <div style={{ marginBottom:14 }}>
+              <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Notes</label>
+              <input value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))}
+                placeholder="Additional details..."
+                style={{ width:"100%", padding:"10px 12px", background:COLORS.bg, border:`1px solid ${COLORS.border}`, borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+            </div>
+
+            <div style={{ display:"flex", gap:8 }}>
+              <Btn onClick={save} style={{ flex:1 }}>{editItem ? "Save Changes" : "Add Record"}</Btn>
+              {editItem && <Btn color={COLORS.red} onClick={() => { del(editItem.id); setShowForm(false); }} style={{ flex:1 }}>Delete</Btn>}
+              <Btn outline onClick={() => { setShowForm(false); setEditItem(null); }} style={{ flex:1 }}>Cancel</Btn>
+            </div>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============ CALENDAR TAB COMPONENT ============
+function CalendarTab({ routes, users, absences, setAbsences, timeOffRequests, setTimeOffRequests, currentUser }) {
+  const today = new Date();
+  const [viewDate, setViewDate] = useState(today);
+  const [showAbsenceModal, setShowAbsenceModal] = useState(false);
+  const [showTimeOffModal, setShowTimeOffModal] = useState(false);
+  const [editAbsence, setEditAbsence] = useState(null);
+  const [viewMode, setViewMode] = useState("month"); // "month" | "list"
+
+  // New absence form
+  const blankAbsence = { clientName:"", routeId:"", startDate:"", endDate:"", type:"vacation", reason:"", allDay:true, note:"" };
+  const [absForm, setAbsForm] = useState(blankAbsence);
+
+  // New time-off form (manager adding on behalf of driver, or approval)
+  const blankTO = { driverName:"", driverId:"", startDate:"", endDate:"", reason:"", status:"pending", note:"" };
+  const [toForm, setToForm] = useState(blankTO);
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const monthName = viewDate.toLocaleString('en-US', { month:'long', year:'numeric' });
+
+  // Build calendar grid
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const todayStr = today.toISOString().slice(0,10);
+
+  // All participants across all routes (deduplicated)
+  const allParticipants = [];
+  const seen = new Set();
+  routes.forEach(r => (r.clients||[]).forEach(c => {
+    if (!seen.has(c.name)) { allParticipants.push({ ...c, routeId: r.id, routeName: r.name }); seen.add(c.name); }
+  }));
+  const drivers = users.filter(u => u.role === "driver");
+
+  // Get events for a specific date string
+  const getEventsForDate = (dateStr) => {
+    const abs = absences.filter(a => dateStr >= a.startDate && dateStr <= (a.endDate || a.startDate));
+    const tos = timeOffRequests.filter(r => dateStr >= r.startDate && dateStr <= (r.endDate || r.startDate));
+    return { absences: abs, timeOff: tos };
+  };
+
+  const saveAbsence = () => {
+    if (!absForm.clientName || !absForm.startDate) return alert("Client and start date are required");
+    const end = absForm.endDate || absForm.startDate;
+    const participant = allParticipants.find(p => p.name === absForm.clientName);
+    const entry = {
+      id: editAbsence?.id || `abs_${Date.now()}`,
+      clientName: absForm.clientName,
+      routeId: participant?.routeId || absForm.routeId,
+      routeName: participant?.routeName || "",
+      startDate: absForm.startDate,
+      endDate: end,
+      type: absForm.type,
+      reason: absForm.reason,
+      allDay: true,
+      note: absForm.note,
+      createdBy: currentUser.name,
+      createdAt: new Date().toISOString(),
+    };
+    if (editAbsence) {
+      setAbsences(prev => prev.map(a => a.id === editAbsence.id ? entry : a));
+    } else {
+      setAbsences(prev => [...prev, entry]);
+    }
+    setAbsForm(blankAbsence);
+    setEditAbsence(null);
+    setShowAbsenceModal(false);
+  };
+
+  const saveTimeOff = () => {
+    if (!toForm.driverName || !toForm.startDate) return alert("Driver and start date are required");
+    const driver = drivers.find(d => d.name === toForm.driverName);
+    const entry = {
+      id: `to_${Date.now()}`,
+      driverName: toForm.driverName,
+      driverId: driver?.id || "",
+      startDate: toForm.startDate,
+      endDate: toForm.endDate || toForm.startDate,
+      reason: toForm.reason,
+      status: toForm.status || "approved",
+      note: toForm.note,
+      createdBy: currentUser.name,
+      createdAt: new Date().toISOString(),
+    };
+    setTimeOffRequests(prev => [...prev, entry]);
+    setToForm(blankTO);
+    setShowTimeOffModal(false);
+  };
+
+  const deleteAbsence = (id) => {
+    if (!confirm("Remove this absence?")) return;
+    setAbsences(prev => prev.filter(a => a.id !== id));
+  };
+
+  const updateTimeOffStatus = (id, status) => {
+    setTimeOffRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+  };
+
+  const ABSENCE_COLORS = { vacation:"#3b82f6", sick:"#ef4444", appointment:"#f59e0b", other:"#8b5cf6" };
+  const TO_COLORS = { pending:"#f59e0b", approved:"#22c55e", denied:"#ef4444" };
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+        <h3 style={{ color: COLORS.text, margin:0 }}>🗓️ Calendar</h3>
+        <div style={{ display:"flex", gap:6 }}>
+          <Btn small outline onClick={() => setViewMode(viewMode==="month"?"list":"month")}>
+            {viewMode==="month" ? "📋 List" : "📅 Month"}
+          </Btn>
+          <Btn small onClick={() => { setAbsForm(blankAbsence); setEditAbsence(null); setShowAbsenceModal(true); }}>
+            + Participant Out
+          </Btn>
+          <Btn small color={COLORS.blue} onClick={() => { setToForm(blankTO); setShowTimeOffModal(true); }}>
+            + Driver Time Off
+          </Btn>
+        </div>
+      </div>
+
+      {/* Month nav */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+        <button onClick={() => setViewDate(new Date(year, month-1, 1))}
+          style={{ background:"none", border:`1px solid ${COLORS.border}`, borderRadius:8, padding:"6px 12px",
+            cursor:"pointer", color:COLORS.text, fontSize:16 }}>‹</button>
+        <div style={{ textAlign:"center" }}>
+          <p style={{ color:COLORS.text, fontSize:16, fontWeight:800, margin:0 }}>{monthName}</p>
+          {viewDate.getMonth() !== today.getMonth() || viewDate.getFullYear() !== today.getFullYear() ? (
+            <button onClick={() => setViewDate(today)} style={{ background:"none", border:"none",
+              color:COLORS.accent, fontSize:11, cursor:"pointer", padding:0 }}>← Today</button>
+          ) : null}
+        </div>
+        <button onClick={() => setViewDate(new Date(year, month+1, 1))}
+          style={{ background:"none", border:`1px solid ${COLORS.border}`, borderRadius:8, padding:"6px 12px",
+            cursor:"pointer", color:COLORS.text, fontSize:16 }}>›</button>
+      </div>
+
+      {viewMode === "month" ? (
+        /* ── MONTH GRID ─────────────────────────────────────────────── */
+        <Card style={{ padding:0, overflow:"hidden" }}>
+          {/* Day headers */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)", background:COLORS.bg }}>
+            {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d => (
+              <div key={d} style={{ textAlign:"center", padding:"6px 2px", fontSize:11, fontWeight:700,
+                color:COLORS.textMuted, borderBottom:`1px solid ${COLORS.border}` }}>{d}</div>
+            ))}
+          </div>
+          {/* Calendar cells */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)" }}>
+            {/* Empty cells before month start */}
+            {Array.from({length:firstDay}).map((_,i) => (
+              <div key={`e${i}`} style={{ minHeight:72, borderRight:`1px solid ${COLORS.border}`,
+                borderBottom:`1px solid ${COLORS.border}`, background:"#fafafa" }} />
+            ))}
+            {/* Day cells */}
+            {Array.from({length:daysInMonth}).map((_,i) => {
+              const day = i+1;
+              const d = new Date(year, month, day);
+              const dateStr = d.toISOString().slice(0,10);
+              const isToday = dateStr === todayStr;
+              const isWeekendDay = d.getDay()===0||d.getDay()===6;
+              const { absences: dayAbs, timeOff: dayTO } = getEventsForDate(dateStr);
+              const totalEvents = dayAbs.length + dayTO.length;
+
+              return (
+                <div key={day} style={{
+                  minHeight:72, borderRight:`1px solid ${COLORS.border}`, borderBottom:`1px solid ${COLORS.border}`,
+                  padding:"4px 3px", background: isWeekendDay ? "#fafafa" : "transparent",
+                  position:"relative",
+                }}>
+                  {/* Day number */}
+                  <div style={{ display:"flex", justifyContent:"center", marginBottom:3 }}>
+                    <span style={{
+                      width:22, height:22, borderRadius:"50%", display:"flex", alignItems:"center", justifyContent:"center",
+                      fontSize:12, fontWeight: isToday ? 800 : 400,
+                      background: isToday ? COLORS.accent : "transparent",
+                      color: isToday ? "#fff" : isWeekendDay ? COLORS.textMuted : COLORS.text,
+                    }}>{day}</span>
+                  </div>
+                  {/* Events — show up to 3 */}
+                  {dayAbs.slice(0,2).map(a => (
+                    <div key={a.id} onClick={() => { setAbsForm({...a, endDate:a.endDate||a.startDate}); setEditAbsence(a); setShowAbsenceModal(true); }}
+                      style={{ background: ABSENCE_COLORS[a.type]||"#3b82f6", color:"#fff", fontSize:9, fontWeight:700,
+                        borderRadius:3, padding:"1px 4px", marginBottom:2, cursor:"pointer", overflow:"hidden",
+                        whiteSpace:"nowrap", textOverflow:"ellipsis", maxWidth:"100%" }}
+                      title={a.clientName}>
+                      {a.clientName.split(", ")[1]||a.clientName} {a.type==="vacation"?"🏖":"⚕️"}
+                    </div>
+                  ))}
+                  {dayTO.slice(0,1).map(r => (
+                    <div key={r.id} style={{ background: TO_COLORS[r.status]||"#f59e0b", color:"#fff", fontSize:9, fontWeight:700,
+                      borderRadius:3, padding:"1px 4px", marginBottom:2, overflow:"hidden",
+                      whiteSpace:"nowrap", textOverflow:"ellipsis", maxWidth:"100%" }}
+                      title={`${r.driverName} time off`}>
+                      🚗 {r.driverName.split(" ")[0]}
+                    </div>
+                  ))}
+                  {totalEvents > 3 && (
+                    <div style={{ fontSize:9, color:COLORS.textMuted, textAlign:"center" }}>+{totalEvents-3} more</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Legend */}
+          <div style={{ display:"flex", gap:10, flexWrap:"wrap", padding:"10px 14px", borderTop:`1px solid ${COLORS.border}` }}>
+            {[["vacation","#3b82f6","Vacation 🏖"],["sick","#ef4444","Sick"],["appointment","#f59e0b","Appointment"],["other","#8b5cf6","Other"]].map(([k,c,l])=>(
+              <div key={k} style={{ display:"flex", alignItems:"center", gap:4 }}>
+                <span style={{ width:12,height:12,borderRadius:3,background:c,display:"inline-block" }}/>
+                <span style={{ fontSize:11, color:COLORS.textMuted }}>{l}</span>
+              </div>
+            ))}
+            <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+              <span style={{ width:12,height:12,borderRadius:3,background:"#22c55e",display:"inline-block" }}/>
+              <span style={{ fontSize:11, color:COLORS.textMuted }}>Driver Time Off ✓</span>
+            </div>
+          </div>
+        </Card>
+      ) : (
+        /* ── LIST VIEW ──────────────────────────────────────────────── */
+        <div>
+          {/* Participant Absences */}
+          <h4 style={{ color:COLORS.text, margin:"0 0 8px", fontSize:14 }}>Participant Absences</h4>
+          {absences.length === 0 ? (
+            <Card><p style={{ color:COLORS.textMuted, textAlign:"center", fontSize:13 }}>No absences recorded</p></Card>
+          ) : (
+            absences.sort((a,b)=>a.startDate.localeCompare(b.startDate)).map(a => {
+              const isPast = (a.endDate||a.startDate) < todayStr;
+              return (
+                <Card key={a.id} style={{ marginBottom:8, opacity: isPast ? 0.6 : 1 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                    <div style={{ flex:1 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+                        <span style={{ background:ABSENCE_COLORS[a.type]||"#3b82f6", color:"#fff",
+                          fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:10 }}>
+                          {a.type}
+                        </span>
+                        <span style={{ color:COLORS.text, fontSize:14, fontWeight:700 }}>{a.clientName}</span>
+                        {isPast && <Badge color={COLORS.textMuted}>Past</Badge>}
+                      </div>
+                      <p style={{ color:COLORS.textMuted, fontSize:12, margin:0 }}>
+                        📅 {a.startDate}{a.endDate && a.endDate!==a.startDate ? ` → ${a.endDate}` : ""}
+                        {a.routeName ? ` · ${a.routeName}` : ""}
+                      </p>
+                      {a.reason && <p style={{ color:COLORS.textDim, fontSize:11, margin:"2px 0 0" }}>{a.reason}</p>}
+                      {a.note && <p style={{ color:COLORS.textDim, fontSize:11, margin:"2px 0 0", fontStyle:"italic" }}>{a.note}</p>}
+                    </div>
+                    <div style={{ display:"flex", gap:6 }}>
+                      <button onClick={() => { setAbsForm({...a}); setEditAbsence(a); setShowAbsenceModal(true); }}
+                        style={{ background:"none", border:`1px solid ${COLORS.border}`, borderRadius:6, padding:"4px 8px",
+                          cursor:"pointer", color:COLORS.textMuted, fontSize:12 }}>✏️</button>
+                      <button onClick={() => deleteAbsence(a.id)}
+                        style={{ background:"none", border:"none", color:COLORS.red, cursor:"pointer", fontSize:16, padding:"4px 6px" }}>✕</button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })
+          )}
+
+          {/* Driver Time Off */}
+          <h4 style={{ color:COLORS.text, margin:"16px 0 8px", fontSize:14 }}>Driver Time-Off Requests</h4>
+          {timeOffRequests.length === 0 ? (
+            <Card><p style={{ color:COLORS.textMuted, textAlign:"center", fontSize:13 }}>No time-off requests</p></Card>
+          ) : (
+            timeOffRequests.sort((a,b)=>a.startDate.localeCompare(b.startDate)).map(r => {
+              const isPast = (r.endDate||r.startDate) < todayStr;
+              return (
+                <Card key={r.id} style={{ marginBottom:8, opacity: isPast ? 0.6 : 1 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                    <div style={{ flex:1 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:4 }}>
+                        <span style={{ background:TO_COLORS[r.status]||"#f59e0b", color:"#fff",
+                          fontSize:10, fontWeight:700, padding:"2px 8px", borderRadius:10 }}>
+                          {r.status.toUpperCase()}
+                        </span>
+                        <span style={{ color:COLORS.text, fontSize:14, fontWeight:700 }}>🚗 {r.driverName}</span>
+                        {isPast && <Badge color={COLORS.textMuted}>Past</Badge>}
+                      </div>
+                      <p style={{ color:COLORS.textMuted, fontSize:12, margin:0 }}>
+                        📅 {r.startDate}{r.endDate && r.endDate!==r.startDate ? ` → ${r.endDate}` : ""}
+                      </p>
+                      {r.reason && <p style={{ color:COLORS.textDim, fontSize:11, margin:"2px 0 0" }}>{r.reason}</p>}
+                    </div>
+                    <div style={{ display:"flex", gap:4 }}>
+                      {r.status === "pending" && (
+                        <>
+                          <button onClick={() => updateTimeOffStatus(r.id, "approved")}
+                            style={{ background:"#22c55e", border:"none", borderRadius:6, padding:"4px 8px",
+                              cursor:"pointer", color:"#fff", fontSize:11, fontWeight:700 }}>✓ Approve</button>
+                          <button onClick={() => updateTimeOffStatus(r.id, "denied")}
+                            style={{ background:COLORS.red, border:"none", borderRadius:6, padding:"4px 8px",
+                              cursor:"pointer", color:"#fff", fontSize:11, fontWeight:700 }}>✕ Deny</button>
+                        </>
+                      )}
+                      <button onClick={() => { if(confirm("Remove this time-off request?")) setTimeOffRequests(prev=>prev.filter(x=>x.id!==r.id)); }}
+                        style={{ background:"none", border:"none", color:COLORS.red, cursor:"pointer", fontSize:16, padding:"4px 6px" }}>✕</button>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* ── Add/Edit Absence Modal ─────────────────────────────────── */}
+      {showAbsenceModal && (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.5)", zIndex:200,
+          display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <Card style={{ width:"100%", maxWidth:420, maxHeight:"90vh", overflowY:"auto" }}>
+            <h3 style={{ color:COLORS.text, margin:"0 0 14px" }}>
+              {editAbsence ? "✏️ Edit Absence" : "📵 Mark Participant Out"}
+            </h3>
+
+            {/* Participant */}
+            <div style={{ marginBottom:12 }}>
+              <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>
+                Participant *
+              </label>
+              <select value={absForm.clientName} onChange={e=>setAbsForm(p=>({...p,clientName:e.target.value}))}
+                style={{ width:"100%", padding:"10px 12px", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+                  borderRadius:8, color:COLORS.text, fontSize:14 }}>
+                <option value="">— Select participant —</option>
+                {allParticipants.sort((a,b)=>a.name.localeCompare(b.name)).map(p => (
+                  <option key={p.name} value={p.name}>{p.name} ({p.routeName})</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Type */}
+            <div style={{ marginBottom:12 }}>
+              <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:6 }}>Type</label>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                {[["vacation","🏖 Vacation","#3b82f6"],["sick","🤒 Sick","#ef4444"],["appointment","📋 Appointment","#f59e0b"],["other","📌 Other","#8b5cf6"]].map(([val,label,color])=>(
+                  <button key={val} onClick={()=>setAbsForm(p=>({...p,type:val}))}
+                    style={{ padding:"7px 12px", borderRadius:8, fontSize:12, fontWeight:700, cursor:"pointer",
+                      border:`2px solid ${absForm.type===val?color:COLORS.border}`,
+                      background:absForm.type===val?color:"transparent", color:absForm.type===val?"#fff":COLORS.textMuted }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Dates */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
+              <div>
+                <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Start Date *</label>
+                <input type="date" value={absForm.startDate} onChange={e=>setAbsForm(p=>({...p,startDate:e.target.value,endDate:p.endDate||e.target.value}))}
+                  style={{ width:"100%", padding:"10px 10px", background:COLORS.bg, border:`2px solid ${COLORS.accent}`,
+                    borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+              </div>
+              <div>
+                <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>End Date</label>
+                <input type="date" value={absForm.endDate||absForm.startDate} onChange={e=>setAbsForm(p=>({...p,endDate:e.target.value}))}
+                  min={absForm.startDate}
+                  style={{ width:"100%", padding:"10px 10px", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+                    borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+              </div>
+            </div>
+
+            {/* Reason / Note */}
+            <div style={{ marginBottom:10 }}>
+              <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Reason (optional)</label>
+              <input value={absForm.reason} onChange={e=>setAbsForm(p=>({...p,reason:e.target.value}))}
+                placeholder="e.g. Annual vacation, doctor appointment..."
+                style={{ width:"100%", padding:"10px 12px", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+                  borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+            </div>
+            <div style={{ marginBottom:14 }}>
+              <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Internal Note</label>
+              <input value={absForm.note} onChange={e=>setAbsForm(p=>({...p,note:e.target.value}))}
+                placeholder="Notes for the team..."
+                style={{ width:"100%", padding:"10px 12px", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+                  borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+            </div>
+
+            <div style={{ background:"#fffbeb", borderRadius:8, padding:"8px 12px", marginBottom:14,
+              border:`1px solid ${COLORS.yellow}` }}>
+              <p style={{ color:"#92400e", fontSize:11, fontWeight:700, margin:0 }}>
+                ⚡ Driver route will auto-adjust on the marked days — participant will be hidden from the route log.
+              </p>
+            </div>
+
+            <div style={{ display:"flex", gap:8 }}>
+              <Btn onClick={saveAbsence} style={{ flex:1 }}>
+                {editAbsence ? "Save Changes" : "Mark Out"}
+              </Btn>
+              {editAbsence && (
+                <Btn color={COLORS.red} onClick={() => { deleteAbsence(editAbsence.id); setShowAbsenceModal(false); }} style={{ flex:1 }}>
+                  Delete
+                </Btn>
+              )}
+              <Btn outline onClick={() => { setShowAbsenceModal(false); setEditAbsence(null); setAbsForm(blankAbsence); }} style={{ flex:1 }}>
+                Cancel
+              </Btn>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Add Driver Time Off Modal ──────────────────────────────── */}
+      {showTimeOffModal && (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.5)", zIndex:200,
+          display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <Card style={{ width:"100%", maxWidth:420 }}>
+            <h3 style={{ color:COLORS.text, margin:"0 0 14px" }}>🚗 Driver Time-Off</h3>
+
+            <div style={{ marginBottom:12 }}>
+              <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Driver *</label>
+              <select value={toForm.driverName} onChange={e=>setToForm(p=>({...p,driverName:e.target.value}))}
+                style={{ width:"100%", padding:"10px 12px", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+                  borderRadius:8, color:COLORS.text, fontSize:14 }}>
+                <option value="">— Select driver —</option>
+                {users.filter(u=>["driver","manager","admin_assistant"].includes(u.role)).map(u=>(
+                  <option key={u.id} value={u.name}>{u.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:12 }}>
+              <div>
+                <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Start Date *</label>
+                <input type="date" value={toForm.startDate} onChange={e=>setToForm(p=>({...p,startDate:e.target.value,endDate:p.endDate||e.target.value}))}
+                  style={{ width:"100%", padding:"10px 10px", background:COLORS.bg, border:`2px solid ${COLORS.blue}`,
+                    borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+              </div>
+              <div>
+                <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>End Date</label>
+                <input type="date" value={toForm.endDate||toForm.startDate} onChange={e=>setToForm(p=>({...p,endDate:e.target.value}))}
+                  min={toForm.startDate}
+                  style={{ width:"100%", padding:"10px 10px", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+                    borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom:10 }}>
+              <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:4 }}>Reason</label>
+              <input value={toForm.reason} onChange={e=>setToForm(p=>({...p,reason:e.target.value}))}
+                placeholder="Vacation, personal, medical..."
+                style={{ width:"100%", padding:"10px 12px", background:COLORS.bg, border:`1px solid ${COLORS.border}`,
+                  borderRadius:8, color:COLORS.text, fontSize:14, boxSizing:"border-box" }} />
+            </div>
+
+            <div style={{ marginBottom:14 }}>
+              <label style={{ display:"block", color:COLORS.textDim, fontSize:12, fontWeight:600, marginBottom:6 }}>Status</label>
+              <div style={{ display:"flex", gap:6 }}>
+                {[["pending","⏳ Pending","#f59e0b"],["approved","✓ Approved","#22c55e"],["denied","✕ Denied","#ef4444"]].map(([val,label,color])=>(
+                  <button key={val} onClick={()=>setToForm(p=>({...p,status:val}))}
+                    style={{ flex:1, padding:"8px 6px", borderRadius:8, fontSize:11, fontWeight:700, cursor:"pointer",
+                      border:`2px solid ${toForm.status===val?color:COLORS.border}`,
+                      background:toForm.status===val?color:"transparent", color:toForm.status===val?"#fff":COLORS.textMuted }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display:"flex", gap:8 }}>
+              <Btn onClick={saveTimeOff} style={{ flex:1 }}>Save</Btn>
+              <Btn outline onClick={() => setShowTimeOffModal(false)} style={{ flex:1 }}>Cancel</Btn>
+            </div>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ============ REPORTS TAB COMPONENT ============
-function ReportsTab({ logs, routes, isAdmin }) {
+function ReportsTab({ logs, routes, isAdmin, absences = [] }) {
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const [selectedMonth, setSelectedMonth] = useState(defaultMonth);
@@ -3025,22 +4418,22 @@ function ReportsTab({ logs, routes, isAdmin }) {
   });
 
   const handleDownloadKTS = () => {
-    const blob = generateKTSTrackerBlob(monthLogs, routes, selectedMonth, isAdmin);
+    const blob = generateKTSTrackerBlob(monthLogs, routes, selectedMonth, isAdmin, absences);
     if (blob) downloadBlob(blob, `KTS_Client_Tracker_${monthName.replace(' ','_')}.xlsx`);
   };
 
   const handleDownloadPriority = () => {
-    const blob = generatePriorityTrackerBlob(monthLogs, selectedMonth, isAdmin);
+    const blob = generatePriorityTrackerBlob(monthLogs, selectedMonth, isAdmin, absences);
     if (blob) downloadBlob(blob, `Priority_Transportation_Tracker_${monthName.replace(' ','_')}.xlsx`);
   };
 
   const handleDownloadHA0935 = () => {
-    const blob = generateHA0935Blob(monthLogs, routes, selectedMonth, isAdmin);
+    const blob = generateHA0935Blob(monthLogs, routes, selectedMonth, isAdmin, absences);
     if (blob) downloadBlob(blob, `HA0935_Khan_Transportation_${monthName.replace(' ','_')}.xlsx`);
   };
 
   const handleDownloadHV0713 = () => {
-    const blob = generateHV0713Blob(monthLogs, selectedMonth, isAdmin);
+    const blob = generateHV0713Blob(monthLogs, selectedMonth, isAdmin, absences);
     if (blob) downloadBlob(blob, `HV0713_Priority_Transportation_${monthName.replace(' ','_')}.xlsx`);
   };
 
@@ -3080,6 +4473,41 @@ function ReportsTab({ logs, routes, isAdmin }) {
         <p style={{ color: COLORS.textDim, fontSize:12, margin:'0 0 6px' }}>
           Gray weekends · Yellow weekdays · Blue headers — data auto-fills from driver submissions.
         </p>
+
+        {/* Calendar Impact Summary */}
+        {(() => {
+          const monthAbsences = absences.filter(a => {
+            const aStart = a.startDate.slice(0,7);
+            const aEnd = (a.endDate||a.startDate).slice(0,7);
+            return aStart <= selectedMonth && aEnd >= selectedMonth;
+          });
+          if (monthAbsences.length === 0) return null;
+          return (
+            <div style={{ background:'#f0f9ff', border:`1px solid ${COLORS.blue}44`, borderRadius:8,
+              padding:'8px 12px', marginBottom:10 }}>
+              <p style={{ color:COLORS.blue, fontSize:11, fontWeight:800, margin:'0 0 5px' }}>
+                🗓️ Calendar Absences Auto-Applied ({monthAbsences.length} entries)
+              </p>
+              {monthAbsences.slice(0,5).map((a,i) => (
+                <p key={i} style={{ color:COLORS.textMuted, fontSize:11, margin:'2px 0 0' }}>
+                  • {a.clientName} — {a.startDate}{a.endDate && a.endDate!==a.startDate ? ` → ${a.endDate}` : ''}
+                  <span style={{ color:a.type==='sick'?COLORS.red:'#7c3aed', fontWeight:700 }}>
+                    {' '}({a.type==='sick' ? 'NS' : 'C'})
+                  </span>
+                </p>
+              ))}
+              {monthAbsences.length > 5 && (
+                <p style={{ color:COLORS.textMuted, fontSize:10, margin:'3px 0 0' }}>
+                  +{monthAbsences.length - 5} more...
+                </p>
+              )}
+              <p style={{ color:COLORS.blue, fontSize:10, margin:'5px 0 0', fontStyle:'italic' }}>
+                Sick days → NS · Vacation/Appointment/Other → C · Route Detail shows 0 when all clients out
+              </p>
+            </div>
+          );
+        })()}
+
         {!isAdmin && (
           <div style={{ background:'#fffbeb', border:`1px solid ${COLORS.yellow}`, borderRadius:8, padding:'8px 12px', marginBottom:12 }}>
             <p style={{ color:'#92400e', fontSize:11, margin:0 }}>
@@ -3232,6 +4660,63 @@ function ReportsTab({ logs, routes, isAdmin }) {
 }
 
 // ============ EXCEL EXPORT ENGINE ============
+// ── Haversine distance between two lat/lng points (returns miles) ──────────
+function haversineMiles(lat1, lon1, lat2, lon2) {
+  const R = 3958.8; // Earth radius in miles
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ── Geocode an address using Nominatim (OpenStreetMap, free, no key) ────────
+const _geocodeCache = {};
+async function geocodeAddress(address) {
+  if (!address) return null;
+  if (_geocodeCache[address]) return _geocodeCache[address];
+  try {
+    const q = encodeURIComponent(address + ", California, USA");
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`, {
+      headers: { "User-Agent": "KTS-Fleet-Manager/1.0" }
+    });
+    const data = await res.json();
+    if (data && data.length > 0) {
+      const result = { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+      _geocodeCache[address] = result;
+      return result;
+    }
+  } catch(e) {}
+  return null;
+}
+
+// ── Calculate route total miles given ordered stop addresses (skipping called-out) ─
+async function calcRouteMiles(stops, calledOutNames = []) {
+  // Build ordered list of addresses, skipping stops where ALL clients called out
+  const addressList = [];
+  for (const stop of stops) {
+    if (stop.type === "base") {
+      addressList.push(stop.address);
+      continue;
+    }
+    const activeClients = (stop.clients || []).filter(cl => !calledOutNames.includes(cl));
+    if (stop.dropoff) {
+      if (activeClients.length > 0) addressList.push(stop.address);
+    } else {
+      if (activeClients.length > 0) addressList.push(stop.address);
+    }
+  }
+  // Geocode all addresses
+  const coords = await Promise.all(addressList.map(a => geocodeAddress(a)));
+  // Sum Haversine distances
+  let total = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    if (coords[i] && coords[i+1]) {
+      total += haversineMiles(coords[i].lat, coords[i].lon, coords[i+1].lat, coords[i+1].lon);
+    }
+  }
+  return Math.round(total * 10) / 10;
+}
+
 function buildBizDays(year, month) {
   const days = [];
   const d = new Date(year, month - 1, 1);
@@ -3382,7 +4867,7 @@ function styleAttendance(ws, allDays, numClients) {
 }
 
 // ── MAIN KTS TRACKER GENERATOR ────────────────────────────────────────────────
-function generateKTSTrackerBlob(logs, routes, monthYear, showFinancials = false) {
+function generateKTSTrackerBlob(logs, routes, monthYear, showFinancials = false, absences = []) {
   if (typeof XLSX === 'undefined') { alert('Excel library not loaded. Check your internet connection.'); return null; }
   const [year, month] = monthYear.split('-').map(Number);
   const allDays = getAllDays(year, month);
@@ -3390,6 +4875,25 @@ function generateKTSTrackerBlob(logs, routes, monthYear, showFinancials = false)
   const wb = XLSX.utils.book_new();
   const startDate = new Date(year, month-1, 1).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'});
   const monthLabel = new Date(year, month-1, 1).toLocaleString('en-US',{month:'long',year:'numeric'});
+
+  // ── Absence helpers ───────────────────────────────────────────────────────
+  // Returns true if clientName is calendar-absent on dateStr
+  const isAbsent = (clientName, dateStr) => absences.some(a =>
+    a.clientName === clientName && dateStr >= a.startDate && dateStr <= (a.endDate || a.startDate)
+  );
+  // Returns true if ALL active clients on a route are absent on dateStr
+  const allClientsAbsent = (route, dateStr) => {
+    const active = (route.clients||[]).filter(c => c.active);
+    return active.length > 0 && active.every(c => isAbsent(c.name, dateStr));
+  };
+  // Returns the absence type/reason for display
+  const getAbsenceCode = (clientName, dateStr) => {
+    const a = absences.find(a =>
+      a.clientName === clientName && dateStr >= a.startDate && dateStr <= (a.endDate || a.startDate)
+    );
+    if (!a) return null;
+    return a.type === 'sick' ? 'NS' : 'C'; // sick = No Show, others = Cancellation
+  };
 
   // ── SHEET 1: Route Detail ──────────────────────────────────────────────────
   const rdData = [
@@ -3411,6 +4915,8 @@ function generateKTSTrackerBlob(logs, routes, monthYear, showFinancials = false)
       allDays.forEach(day => {
         if (isWeekend(day)) { row.push(''); return; }
         const dateStr = day.toISOString().slice(0,10);
+        // If ALL clients on this route are calendar-absent this day → 0 (no service)
+        if (allClientsAbsent(route, dateStr)) { row.push(0); return; }
         const submitted = logs.some(l => (l.routeId===route.id||l.routeName===route.name) && l.date===dateStr && l.period===period);
         row.push(submitted ? 1 : '');
       });
@@ -3488,6 +4994,11 @@ function generateKTSTrackerBlob(logs, routes, monthYear, showFinancials = false)
     allDays.forEach(day => {
       if (isWeekend(day)) { row.push(''); return; }
       const dateStr = day.toISOString().slice(0,10);
+
+      // ── Calendar absence takes priority over driver log ──────────────
+      const calAbsCode = getAbsenceCode(cl.name, dateStr);
+      if (calAbsCode) { row.push(calAbsCode); return; }
+
       const dayLogs = logs.filter(l=>l.date===dateStr&&(l.routeId===cl.routeId||l.routeName===cl.routeName));
       let code = '';
       if (dayLogs.length > 0) {
@@ -3528,6 +5039,8 @@ function generateKTSTrackerBlob(logs, routes, monthYear, showFinancials = false)
     allDays.forEach(day => {
       if (isWeekend(day)) { row.push('','',''); return; }
       const dateStr = day.toISOString().slice(0,10);
+      // All clients absent on this route today → 0 miles
+      if (allClientsAbsent(route, dateStr)) { row.push(0, 0, 0); return; }
       const amLog = logs.find(l=>l.date===dateStr&&l.routeId===route.id&&l.period==='AM');
       const pmLog = logs.find(l=>l.date===dateStr&&l.routeId===route.id&&l.period==='PM');
       row.push(amLog?(parseFloat(amLog.totalMiles)||''):'', pmLog?(parseFloat(pmLog.totalMiles)||''):'', '');
@@ -3560,6 +5073,8 @@ function generateKTSTrackerBlob(logs, routes, monthYear, showFinancials = false)
     allDays.forEach(day => {
       if (isWeekend(day)) { row.push(''); return; }
       const dateStr = day.toISOString().slice(0,10);
+      // Calendar absence → 0 miles
+      if (isAbsent(cl.name, dateStr)) { row.push(0); return; }
       const dayLogs = logs.filter(l=>l.date===dateStr&&l.routeId===cl.routeId);
       let miles = '';
       dayLogs.forEach(l=>{ if(l.clientMiles?.[cl.name]) miles=(miles||0)+parseFloat(l.clientMiles[cl.name]); });
@@ -3593,6 +5108,8 @@ function generateKTSTrackerBlob(logs, routes, monthYear, showFinancials = false)
       allDays.forEach(day => {
         if(isWeekend(day)){row.push('','','');return;}
         const dateStr = day.toISOString().slice(0,10);
+        // Calendar absence → blank/0 miles
+        if (isAbsent(cl.name, dateStr)) { row.push(0, 0, 0); return; }
         const amL = logs.find(l=>l.date===dateStr&&l.routeId===route.id&&l.period==='AM');
         const pmL = logs.find(l=>l.date===dateStr&&l.routeId===route.id&&l.period==='PM');
         row.push(amL?.clientMiles?.[cl.name]||'', pmL?.clientMiles?.[cl.name]||'', '');
@@ -3610,12 +5127,17 @@ function generateKTSTrackerBlob(logs, routes, monthYear, showFinancials = false)
   return new Blob([wbout], {type:'application/octet-stream'});
 }
 
-function generatePriorityTrackerBlob(logs, monthYear, showFinancials = false) {
+function generatePriorityTrackerBlob(logs, monthYear, showFinancials = false, absences = []) {
   if (typeof XLSX === 'undefined') { alert('Excel library not loaded.'); return null; }
   const [year, month] = monthYear.split('-').map(Number);
   const allDays = getAllDays(year, month);
   const wb = XLSX.utils.book_new();
   const startDate = new Date(year,month-1,1).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'2-digit'});
+
+  // Absence helpers (same logic as KTS)
+  const isAbsent = (clientName, dateStr) => absences.some(a =>
+    a.clientName === clientName && dateStr >= a.startDate && dateStr <= (a.endDate || a.startDate)
+  );
 
   // Route Detail
   const rdData = [
@@ -3690,11 +5212,11 @@ function generatePriorityTrackerBlob(logs, monthYear, showFinancials = false) {
   return new Blob([wbout],{type:'application/octet-stream'});
 }
 
-function generateHA0935Blob(logs, routes, monthYear, showFinancials = false) {
-  return generateKTSTrackerBlob(logs, routes, monthYear, showFinancials);
+function generateHA0935Blob(logs, routes, monthYear, showFinancials = false, absences = []) {
+  return generateKTSTrackerBlob(logs, routes, monthYear, showFinancials, absences);
 }
-function generateHV0713Blob(logs, monthYear, showFinancials = false) {
-  return generatePriorityTrackerBlob(logs, monthYear, showFinancials);
+function generateHV0713Blob(logs, monthYear, showFinancials = false, absences = []) {
+  return generatePriorityTrackerBlob(logs, monthYear, showFinancials, absences);
 }
 
 function downloadBlob(blob, filename) {
@@ -3732,6 +5254,15 @@ function App() {
   const [inspections, setInspections] = useState(() => {
     try { const s = localStorage.getItem('kts_inspections'); return s ? JSON.parse(s) : []; } catch(e) { return []; }
   });
+  const [absences, setAbsences] = useState(() => {
+    try { const s = localStorage.getItem('kts_absences'); return s ? JSON.parse(s) : []; } catch(e) { return []; }
+  });
+  const [timeOffRequests, setTimeOffRequests] = useState(() => {
+    try { const s = localStorage.getItem('kts_timeoff'); return s ? JSON.parse(s) : []; } catch(e) { return []; }
+  });
+  const [vehicleServices, setVehicleServices] = useState(() => {
+    try { const s = localStorage.getItem('kts_vehicle_services'); return s ? JSON.parse(s) : []; } catch(e) { return []; }
+  });
   const [appMode, setAppMode] = useState("dashboard");
 
   // Password change state
@@ -3750,6 +5281,9 @@ function App() {
   useEffect(() => { try { localStorage.setItem('kts_users', JSON.stringify(users)); } catch(e) {} }, [users]);
   useEffect(() => { try { localStorage.setItem('kts_logs', JSON.stringify(logs)); } catch(e) {} }, [logs]);
   useEffect(() => { try { localStorage.setItem('kts_inspections', JSON.stringify(inspections)); } catch(e) {} }, [inspections]);
+  useEffect(() => { try { localStorage.setItem('kts_absences', JSON.stringify(absences)); } catch(e) {} }, [absences]);
+  useEffect(() => { try { localStorage.setItem('kts_timeoff', JSON.stringify(timeOffRequests)); } catch(e) {} }, [timeOffRequests]);
+  useEffect(() => { try { localStorage.setItem('kts_vehicle_services', JSON.stringify(vehicleServices)); } catch(e) {} }, [vehicleServices]);
 
   // Auto-download previous month when a new month starts
   useEffect(() => {
@@ -3766,9 +5300,9 @@ function App() {
           const isAdminUser = currentUser.role === 'admin';
           setTimeout(() => {
             if (window.confirm(`📅 New month detected! Auto-download ${monthName} reports now?`)) {
-              const ktsBlob = generateKTSTrackerBlob(prevMonthLogs, routes, lastAutoDownload, isAdminUser);
+              const ktsBlob = generateKTSTrackerBlob(prevMonthLogs, routes, lastAutoDownload, isAdminUser, absences);
               if (ktsBlob) downloadBlob(ktsBlob, `KTS_Client_Tracker_${monthName.replace(' ','_')}.xlsx`);
-              const ptBlob = generatePriorityTrackerBlob(prevMonthLogs, lastAutoDownload, isAdminUser);
+              const ptBlob = generatePriorityTrackerBlob(prevMonthLogs, lastAutoDownload, isAdminUser, absences);
               if (ptBlob) downloadBlob(ptBlob, `Priority_Transportation_${monthName.replace(' ','_')}.xlsx`);
             }
           }, 1500);
@@ -3776,6 +5310,64 @@ function App() {
       }
       localStorage.setItem('kts_last_auto_download', currentMonthKey);
     } catch(e) {}
+  }, [currentUser]);
+
+  // ── Friday + Daily Reminder for absences and time-off ──────────────────
+  useEffect(() => {
+    if (!currentUser || !['admin','admin_assistant','manager'].includes(currentUser.role)) return;
+    const now = new Date();
+    const today = now.toISOString().slice(0,10);
+    const dayOfWeek = now.getDay(); // 5 = Friday
+    const dismissKey = `kts_reminder_dismissed_${today}`;
+    if (localStorage.getItem(dismissKey)) return;
+
+    // Collect upcoming absences for next 7 days
+    const nextWeekDates = [];
+    for (let i = 0; i <= 7; i++) {
+      const d = new Date(now); d.setDate(d.getDate() + i);
+      nextWeekDates.push(d.toISOString().slice(0,10));
+    }
+
+    setTimeout(() => {
+      try {
+        const stored = JSON.parse(localStorage.getItem('kts_absences') || '[]');
+        const storedTO = JSON.parse(localStorage.getItem('kts_timeoff') || '[]');
+
+        const upcomingAbsences = stored.filter(a =>
+          nextWeekDates.some(d => d >= a.startDate && d <= (a.endDate || a.startDate))
+        );
+        const upcomingTimeOff = storedTO.filter(r =>
+          r.status !== 'denied' && nextWeekDates.some(d => d >= r.startDate && d <= (r.endDate || r.startDate))
+        );
+
+        if (upcomingAbsences.length === 0 && upcomingTimeOff.length === 0) return;
+
+        const isFriday = dayOfWeek === 5;
+        const prefix = isFriday ? "📅 Weekly Preview — Next 7 Days\n\n" : "🔔 Daily Reminder\n\n";
+        let msg = prefix;
+
+        if (upcomingAbsences.length > 0) {
+          msg += `PARTICIPANT ABSENCES (${upcomingAbsences.length}):\n`;
+          upcomingAbsences.forEach(a => {
+            const dateRange = a.endDate && a.endDate !== a.startDate ? `${a.startDate} → ${a.endDate}` : a.startDate;
+            msg += `  • ${a.clientName}: ${dateRange} (${a.reason || a.type})\n`;
+          });
+          msg += "\n";
+        }
+        if (upcomingTimeOff.length > 0) {
+          msg += `DRIVER TIME-OFF (${upcomingTimeOff.length}):\n`;
+          upcomingTimeOff.forEach(r => {
+            const dateRange = r.endDate && r.endDate !== r.startDate ? `${r.startDate} → ${r.endDate}` : r.startDate;
+            msg += `  • ${r.driverName}: ${dateRange} — ${r.status.toUpperCase()}\n`;
+          });
+        }
+
+        msg += "\nView Calendar tab for details.";
+        if (window.confirm(msg + "\n\nDismiss for today?")) {
+          localStorage.setItem(dismissKey, '1');
+        }
+      } catch(e) {}
+    }, 2500);
   }, [currentUser]);
 
   const handleLogin = (user) => {
@@ -3881,7 +5473,7 @@ function App() {
   if (currentUser.role === "driver") {
     return (
       <>
-        <DriverDashboard user={currentUser} routes={routes} onSubmit={handleLogSubmit} onInspectionComplete={handleInspectionComplete} />
+        <DriverDashboard user={currentUser} routes={routes} onSubmit={handleLogSubmit} onInspectionComplete={handleInspectionComplete} absences={absences} vehicleServices={vehicleServices} />
         <BottomNav />
         {showChangePw && <ChangePasswordModal />}
       </>
@@ -3891,9 +5483,12 @@ function App() {
   return (
     <>
       {appMode === "dashboard" ? (
-        <AdminDashboard user={currentUser} routes={routes} setRoutes={setRoutes} users={users} setUsers={setUsers} logs={logs} />
+        <AdminDashboard user={currentUser} routes={routes} setRoutes={setRoutes} users={users} setUsers={setUsers} logs={logs}
+          absences={absences} setAbsences={setAbsences}
+          timeOffRequests={timeOffRequests} setTimeOffRequests={setTimeOffRequests}
+          vehicleServices={vehicleServices} setVehicleServices={setVehicleServices} />
       ) : (
-        <DriverDashboard user={currentUser} routes={routes} onSubmit={handleLogSubmit} onInspectionComplete={handleInspectionComplete} />
+        <DriverDashboard user={currentUser} routes={routes} onSubmit={handleLogSubmit} onInspectionComplete={handleInspectionComplete} absences={absences} vehicleServices={vehicleServices} />
       )}
       <BottomNav />
       {showChangePw && <ChangePasswordModal />}
