@@ -977,6 +977,44 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete, absence
       todayDateStr <= (a.endDate || a.startDate)
     );
   };
+
+  // Returns true if client is scheduled to go today based on their daySchedule
+  // If no schedule is set, assume they go every weekday
+  const DAY_NAMES = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const todayDayName = DAY_NAMES[new Date().getDay()];
+  const isScheduledToday = (client) => {
+    if (!client) return true;
+    // daySchedule: { Mon: {...}, Wed: {...} } — set via per-day schedule builder
+    if (client.daySchedule && Object.keys(client.daySchedule).length > 0) {
+      return !!client.daySchedule[todayDayName];
+    }
+    // serviceDays: ["Mon","Wed","Fri"] — legacy simple day picker
+    if (client.serviceDays && client.serviceDays.length > 0) {
+      return client.serviceDays.includes(todayDayName);
+    }
+    // schedule string like "M-F", "M-TH", "M,W,F", "W,TH,F" — parse it
+    if (client.schedule) {
+      const s = client.schedule.toUpperCase().replace(/\s/g,'');
+      const dayMap = { MON:"Mon", TUE:"Tue", WED:"Wed", THU:"Thu", FRI:"Fri",
+                       M:"Mon", T:"Tue", W:"Wed", TH:"Thu", F:"Fri" };
+      // Handle range "M-F", "M-TH"
+      if (s.includes('-')) {
+        const order = ["Mon","Tue","Wed","Thu","Fri"];
+        const parts = s.split('-');
+        const start = dayMap[parts[0]] || parts[0];
+        const end   = dayMap[parts[1]] || parts[1];
+        const si = order.indexOf(start), ei = order.indexOf(end);
+        if (si >= 0 && ei >= 0) return order.indexOf(todayDayName) >= si && order.indexOf(todayDayName) <= ei;
+      }
+      // Handle comma list "W,TH,F" or "M,W,F"
+      if (s.includes(',')) {
+        const parts = s.split(',');
+        return parts.some(p => dayMap[p] === todayDayName);
+      }
+    }
+    // No schedule info — show every weekday
+    return todayDayName !== "Sat" && todayDayName !== "Sun";
+  };
   const isManager = user.role === "manager";
   const [selectedRouteId, setSelectedRouteId] = useState(null);
   const [overrideName, setOverrideName] = useState("");
@@ -1014,7 +1052,8 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete, absence
   const [pmSignature, setPmSignature] = useState(null);
   const [showTimeOffForm, setShowTimeOffForm] = useState(false);
   const [driverTOForm, setDriverTOForm] = useState({ startDate:"", endDate:"", reason:"" });
-  const [inspectionOverride, setInspectionOverride] = useState(false); // driver overrode inspection gate
+  const [inspectionOverride, setInspectionOverride] = useState(false);
+  const [showOverrideModal, setShowOverrideModal] = useState(false); // in-app override confirm
 
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
@@ -1072,10 +1111,10 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete, absence
   const activeStops = stops.filter(s => {
     if (s.type === "base") return true;
     if (s.inactive) return false;
-    // A stop is active if at least one client is active AND not calendar-absent AND not called-out
+    // A stop is active if at least one client is scheduled today, active, not absent, not called-out
     return s.clients.some(c => {
       const cl = driverRoute.clients.find(x => x.name === c);
-      return cl && cl.active && !isCalendarAbsent(c) && !calledOut[c];
+      return cl && cl.active && isScheduledToday(cl) && !isCalendarAbsent(c) && !calledOut[c];
     });
   });
 
@@ -1115,7 +1154,7 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete, absence
   // Get all unique active clients for the route (exclude called-out)
   // Participants marked absent via calendar today (auto-removed from route)
   const calendarAbsentToday = driverRoute.clients.filter(c => c.active && isCalendarAbsent(c.name));
-  const allActiveClients = driverRoute.clients.filter(c => c.active && !isCalendarAbsent(c.name));
+  const allActiveClients = driverRoute.clients.filter(c => c.active && isScheduledToday(c) && !isCalendarAbsent(c.name));
   const routingClients = allActiveClients.filter(c => !calledOut[c.name]); // on-route clients
 
   const handleSubmitAM = () => {
@@ -1329,15 +1368,14 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete, absence
             {(() => {
               const currentStops = period === "am" ? driverRoute.amStops : driverRoute.pmStops;
 
-              // Build filtered stop list — skip dropoff if ALL clients at that stop called out
-              // (unless another active non-called-out client shares the same dropoff)
+              // Build filtered stop list — skip dropoff if ALL clients are unscheduled or called out
               const filteredStops = activeStops.filter(stop => {
                 if (stop.type === "base") return true;
                 if (!stop.dropoff) return true;
-                // For dropoff stops: only show if at least one client at this stop did NOT call out
+                // For dropoff stops: only show if at least one scheduled, non-called-out client
                 const activeAtStop = (stop.clients || []).filter(cl => {
                   const client = driverRoute.clients.find(c => c.name === cl);
-                  return client && client.active && !calledOut[cl];
+                  return client && client.active && isScheduledToday(client) && !calledOut[cl];
                 });
                 return activeAtStop.length > 0;
               });
@@ -1349,10 +1387,10 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete, absence
                 const isBase = stop.type === "base";
                 const isDropoff = !!stop.dropoff;
 
-                // Active clients at this stop (excluding called-out)
+                // Active clients at this stop (scheduled today, not called-out)
                 const activeAtStop = (stop.clients || []).filter(cl => {
                   const client = driverRoute.clients.find(c => c.name === cl);
-                  return client && client.active && !calledOut[cl];
+                  return client && client.active && isScheduledToday(client) && !calledOut[cl];
                 });
 
                 seqNum++;
@@ -1717,18 +1755,10 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete, absence
           <Btn
             onClick={() => {
               if (!inspectionDone && !inspectionOverride) {
-                // Show override warning
-                const override = window.confirm(
-                  "⚠️ VEHICLE INSPECTION REQUIRED\n\n" +
-                  "Vehicle inspections are required before starting your route.\n\n" +
-                  "They protect the safety of drivers and participants and are part of your daily responsibility.\n\n" +
-                  "Tap OK only if you are running late and will complete the inspection immediately after this route.\n\n" +
-                  "This override will be logged and reviewed by your manager."
-                );
-                if (!override) return;
-                setInspectionOverride(true);
+                setShowOverrideModal(true);
+              } else {
+                setActiveView("log");
               }
-              setActiveView("log");
             }}
             color={activeView === "log" ? COLORS.accent : COLORS.border}
             style={{ flex: 1, padding: "16px 8px", display: "flex", flexDirection: "column", alignItems: "center",
@@ -1756,55 +1786,149 @@ const DriverDashboard = ({ user, routes, onSubmit, onInspectionComplete, absence
             }}>
             <span style={{ fontSize: 20, marginBottom: 4 }}>{inspectionDone ? "✅" : "🔍"}</span>
             <span style={{ fontSize: 13 }}>{inspectionDone ? "Inspection ✓" : "Inspection"}</span>
-            {!inspectionDone && !inspectionOverride && <span style={{ fontSize:9, color:"#fff", fontWeight:700, background:COLORS.accent, padding:"1px 5px", borderRadius:4, marginTop:2 }}>START HERE</span>}
+            {!inspectionDone && !inspectionOverride && <span style={{ fontSize:9, color:"#fff", fontWeight:700, background:COLORS.accent, padding:"1px 5px", borderRadius:4, marginTop:2 }}>REQUIRED</span>}
             {flashInspection && !inspectionDone && <span style={{ fontSize: 10, color: COLORS.red, fontWeight: 700 }}>OVERDUE</span>}
           </Btn>
         </div>
 
-        {/* Inspection gate banner — shows if inspection not done and no override */}
-        {!inspectionDone && !inspectionOverride && activeView === "log" && (
-          <div style={{ background:"#fff0f0", border:`2px solid ${COLORS.red}`, borderRadius:12,
-            padding:"16px 14px", marginBottom:12, textAlign:"center" }}>
-            <p style={{ fontSize:28, margin:"0 0 8px" }}>🔍</p>
-            <p style={{ color:COLORS.red, fontSize:15, fontWeight:800, margin:"0 0 6px" }}>
-              Complete Vehicle Inspection First
-            </p>
-            <p style={{ color:COLORS.textMuted, fontSize:12, margin:"0 0 14px", lineHeight:1.5 }}>
-              Vehicle inspections are required before starting your route. They protect the safety of you and your passengers and are part of your daily responsibility.
-            </p>
-            <Btn onClick={() => setActiveView("inspection")} color={COLORS.accent} style={{ width:"100%", marginBottom:8 }}>
-              🔍 Start Inspection Now
-            </Btn>
-            <button onClick={() => {
-              const override = window.confirm(
-                "⚠️ OVERRIDE — INSPECTION REQUIRED\n\n" +
-                "Vehicle inspections protect driver and participant safety.\n\n" +
-                "By overriding, you acknowledge this is an emergency situation and you will complete the inspection IMMEDIATELY after your route.\n\n" +
-                "This override will be flagged for manager review.\n\nContinue anyway?"
-              );
-              if (override) { setInspectionOverride(true); }
-            }} style={{ background:"none", border:"none", color:COLORS.textMuted, fontSize:11,
-              cursor:"pointer", textDecoration:"underline", padding:0 }}>
-              Running late? Override (flagged for review)
-            </button>
+        {/* ── Override Confirmation Modal ── */}
+        {showOverrideModal && (
+          <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.75)",
+            zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+            <div style={{ background:"#1a1a1a", borderRadius:14, width:"100%", maxWidth:420,
+              overflow:"hidden", boxShadow:"0 8px 32px rgba(0,0,0,0.5)" }}>
+              {/* Red header */}
+              <div style={{ background:COLORS.red, padding:"14px 16px" }}>
+                <p style={{ color:"#fff", fontSize:15, fontWeight:800, margin:0, textTransform:"uppercase", letterSpacing:0.5 }}>
+                  🚫 Emergency Override
+                </p>
+                <p style={{ color:"rgba(255,255,255,0.85)", fontSize:11, margin:"3px 0 0" }}>
+                  Inspection Bypass — Read carefully before proceeding
+                </p>
+              </div>
+              {/* Body */}
+              <div style={{ padding:"16px" }}>
+                <p style={{ color:"#f5f5f5", fontSize:13, fontWeight:700, margin:"0 0 10px" }}>
+                  By proceeding you acknowledge:
+                </p>
+                {[
+                  "You are bypassing a mandatory DOT-required pre-trip inspection.",
+                  "You accept personal responsibility for operating an uninspected vehicle.",
+                  "You commit to completing the inspection immediately upon return.",
+                  "This incident will be logged with a timestamp and reported to management.",
+                  "Repeated violations may result in disciplinary action.",
+                ].map((line, i) => (
+                  <div key={i} style={{ display:"flex", gap:8, marginBottom:7, alignItems:"flex-start" }}>
+                    <span style={{ color:COLORS.red, fontWeight:800, fontSize:13, flexShrink:0, marginTop:1 }}>{i+1}.</span>
+                    <p style={{ color:"#ccc", fontSize:12, margin:0, lineHeight:1.5 }}>{line}</p>
+                  </div>
+                ))}
+                <p style={{ color:COLORS.yellow, fontSize:11, fontWeight:700, margin:"12px 0 0",
+                  background:"#2a2000", padding:"8px 12px", borderRadius:8 }}>
+                  ⚠️ This should only be used in a genuine emergency.
+                </p>
+              </div>
+              {/* Buttons */}
+              <div style={{ padding:"0 16px 16px", display:"flex", flexDirection:"column", gap:8 }}>
+                <button onClick={() => { setInspectionOverride(true); setActiveView("log"); setShowOverrideModal(false); }}
+                  style={{ width:"100%", padding:"13px", background:COLORS.red, color:"#fff", border:"none",
+                    borderRadius:9, fontSize:13, fontWeight:800, cursor:"pointer", letterSpacing:0.3 }}>
+                  I Understand — Proceed Without Inspection
+                </button>
+                <button onClick={() => { setShowOverrideModal(false); setActiveView("inspection"); }}
+                  style={{ width:"100%", padding:"13px", background:"#22c55e", color:"#fff", border:"none",
+                    borderRadius:9, fontSize:13, fontWeight:800, cursor:"pointer" }}>
+                  ✓ Complete Inspection Now (Recommended)
+                </button>
+                <button onClick={() => setShowOverrideModal(false)}
+                  style={{ width:"100%", padding:"10px", background:"transparent", color:"#888",
+                    border:"1px solid #444", borderRadius:9, fontSize:12, cursor:"pointer" }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Override warning banner — shows when override active */}
+        {/* Inspection gate — shown when driver tries to access log without completing inspection */}
+        {!inspectionDone && !inspectionOverride && activeView === "log" && (
+          <div style={{ borderRadius:12, overflow:"hidden", marginBottom:12, boxShadow:"0 2px 12px rgba(0,0,0,0.12)" }}>
+            {/* Red header bar */}
+            <div style={{ background:COLORS.red, padding:"14px 16px", display:"flex", alignItems:"center", gap:10 }}>
+              <span style={{ fontSize:22 }}>🚫</span>
+              <div>
+                <p style={{ color:"#fff", fontSize:14, fontWeight:800, margin:0, letterSpacing:0.3 }}>
+                  PRE-TRIP INSPECTION REQUIRED
+                </p>
+                <p style={{ color:"rgba(255,255,255,0.85)", fontSize:11, margin:0 }}>
+                  Route log access is restricted until inspection is complete
+                </p>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div style={{ background:"#fff", padding:"16px", border:`1px solid ${COLORS.red}44`,
+              borderTop:"none", borderRadius:"0 0 12px 12px" }}>
+
+              <p style={{ color:"#1a1a1a", fontSize:13, fontWeight:700, margin:"0 0 8px" }}>
+                Policy Notice — All Drivers
+              </p>
+              <p style={{ color:"#444", fontSize:12, lineHeight:1.6, margin:"0 0 12px" }}>
+                Per company policy and DOT Federal Motor Carrier Safety Regulations,
+                a <strong>pre-trip vehicle inspection must be completed</strong> before operating
+                any company vehicle. This applies every day, every route, without exception.
+              </p>
+
+              <div style={{ background:"#fff5f5", borderRadius:8, padding:"10px 12px", marginBottom:14,
+                borderLeft:`3px solid ${COLORS.red}` }}>
+                <p style={{ color:COLORS.red, fontSize:11, fontWeight:800, margin:"0 0 4px", textTransform:"uppercase", letterSpacing:0.5 }}>
+                  Why This Matters
+                </p>
+                <p style={{ color:"#555", fontSize:11, lineHeight:1.6, margin:0 }}>
+                  You are responsible for the safety of your passengers — individuals with disabilities
+                  who trust this service every day. An uninspected vehicle puts them, you, and
+                  the public at risk. It also exposes you and the company to legal liability.
+                </p>
+              </div>
+
+              <button onClick={() => setActiveView("inspection")}
+                style={{ width:"100%", padding:"13px", background:COLORS.red, color:"#fff",
+                  border:"none", borderRadius:9, fontSize:14, fontWeight:800, cursor:"pointer",
+                  marginBottom:10, letterSpacing:0.3 }}>
+                Begin Pre-Trip Inspection
+              </button>
+
+              <button onClick={() => setShowOverrideModal(true)}
+                style={{ width:"100%", padding:"9px", background:"transparent",
+                  border:`1px solid #ccc`, borderRadius:8, fontSize:11, color:"#888",
+                  cursor:"pointer", letterSpacing:0.2 }}>
+                Emergency Override — I understand this will be reported to management
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Override active — persistent warning banner */}
         {inspectionOverride && !inspectionDone && (
-          <div style={{ background:"#fffbeb", border:`1px solid ${COLORS.yellow}`, borderRadius:8,
-            padding:"8px 12px", marginBottom:12 }}>
-            <p style={{ color:"#92400e", fontSize:11, fontWeight:700, margin:"0 0 3px" }}>
-              ⚠️ Inspection Override Active — Flagged for Review
-            </p>
-            <p style={{ color:"#78350f", fontSize:11, margin:0 }}>
-              Complete your inspection immediately after finishing this route.
-            </p>
-            <button onClick={() => { setInspectionOverride(false); setActiveView("inspection"); }}
-              style={{ marginTop:5, background:"none", border:`1px solid ${COLORS.yellow}`, borderRadius:6,
-                padding:"3px 10px", fontSize:11, fontWeight:700, color:"#92400e", cursor:"pointer" }}>
-              Complete Inspection Now
-            </button>
+          <div style={{ background:"#1a1a1a", borderRadius:10, padding:"12px 14px", marginBottom:12 }}>
+            <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
+              <span style={{ fontSize:18, flexShrink:0 }}>⚠️</span>
+              <div style={{ flex:1 }}>
+                <p style={{ color:COLORS.yellow, fontSize:12, fontWeight:800, margin:"0 0 3px", textTransform:"uppercase", letterSpacing:0.3 }}>
+                  Inspection Override — Management Notified
+                </p>
+                <p style={{ color:"#ccc", fontSize:11, margin:"0 0 8px", lineHeight:1.5 }}>
+                  You are operating this vehicle without completing a mandatory pre-trip inspection.
+                  This incident has been logged and will be reviewed by your supervisor.
+                  You must complete the inspection immediately upon return.
+                </p>
+                <button onClick={() => { setInspectionOverride(false); setActiveView("inspection"); }}
+                  style={{ background:COLORS.yellow, border:"none", borderRadius:6, padding:"5px 14px",
+                    fontSize:11, fontWeight:800, color:"#1a1a1a", cursor:"pointer", letterSpacing:0.2 }}>
+                  Complete Inspection Now
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
